@@ -1,1 +1,1533 @@
-﻿
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+ <title>3D Robot Minesweeper</title>
+ <!--
+     This application is a 3D Minesweeper game built with Three.js.
+     - You control a robot on a 3D grid.
+     - You can select between keyboard/mouse or touch controls.
+     - The game logic implements classic Minesweeper rules.
+     - Textures for the tiles (numbers, flags, mines) are dynamically generated using HTML Canvas.
+ -->
+ <script src="https://cdn.tailwindcss.com"></script>
+ <style>
+     body {
+         font-family: 'Inter', sans-serif;
+         margin: 0;
+         padding: 0;
+         background-color: #000;
+         color: white;
+         overflow: hidden; /* Prevent scrolling */
+     }
+     /* Main 3D container */
+     #container {
+         position: fixed;
+         top: 0;
+         left: 0;
+         width: 100%;
+         height: 100%;
+         cursor: pointer;
+     }
+     /* Loading screen */
+     #loader {
+         position: fixed;
+         top: 0;
+         left: 0;
+         width: 100%;
+         height: 100%;
+         background: rgba(0, 0, 0, 0.8);
+         display: flex;
+         justify-content: center;
+         align-items: center;
+         z-index: 100;
+     }
+     /* Input selection modal */
+     #input-modal {
+         position: fixed;
+         top: 0;
+         left: 0;
+         width: 100%;
+         height: 100%;
+         background: rgba(0, 0, 0, 0.9);
+         display: flex;
+         justify-content: center;
+         align-items: center;
+         z-index: 90;
+         backdrop-filter: blur(10px);
+     }
+     /* Touch Controls Container */
+     #touch-controls {
+         position: fixed;
+         bottom: 0;
+         left: 0;
+         width: 100%;
+         height: 100%;
+         z-index: 50;
+         pointer-events: none; /* Pass clicks through unless on a button */
+         display: none; /* Hidden by default */
+     }
+     /* Joystick */
+     #joystick-area {
+         position: absolute;
+         bottom: 5vw;
+         left: 5vw;
+         width: 30vw;
+         height: 30vw;
+         max-width: 150px;
+         max-height: 150px;
+         background: rgba(255, 255, 255, 0.1);
+         border-radius: 50%;
+         pointer-events: auto; /* Enable touch on this area */
+     }
+     #joystick-thumb {
+         position: absolute;
+         top: 50%;
+         left: 50%;
+         width: 12vw;
+         height: 12vw;
+         max-width: 60px;
+         max-height: 60px;
+         background: rgba(255, 255, 255, 0.5);
+         border-radius: 50%;
+         transform: translate(-50%, -50%);
+         transition: transform 0.1s ease-out;
+     }
+     /* Action Buttons */
+     #action-buttons {
+         position: absolute;
+         bottom: 5vw;
+         right: 5vw;
+         display: grid;
+         grid-template-columns: 1fr 1fr;
+         grid-template-rows: 1fr 1fr 1fr; /* Added a row */
+         gap: 2vw;
+         pointer-events: auto; /* Enable touch on this area */
+     }
+     .action-btn {
+         width: 15vw;
+         height: 15vw;
+         max-width: 70px;
+         max-height: 70px;
+         background: rgba(255, 255, 255, 0.2);
+         border: 2px solid rgba(255, 255, 255, 0.3);
+         border-radius: 50%;
+         display: flex;
+         justify-content: center;
+         align-items: center;
+         font-size: 3vw;
+         font-weight: bold;
+         color: white;
+         user-select: none;
+         text-align: center;
+         line-height: 1.2;
+     }
+     @media (min-width: 640px) {
+         .action-btn { font-size: 16px; }
+     }
+     /* Button layout updated */
+     #jump-btn { grid-column: 2 / 3; grid-row: 1 / 2; }
+     #reveal-btn { grid-column: 1 / 2; grid-row: 1 / 2; } /* Was punch */
+     #flag-btn { grid-column: 1 / 2; grid-row: 2 / 3; } /* New */
+     #crouch-btn { grid-column: 2 / 3; grid-row: 2 / 3; }
+  
+     /* Top UI */
+     /* Container for left-aligned UI elements */
+     #left-ui-container {
+         position: absolute;
+         top: 10px;
+         left: 10px;
+         z-index: 20;
+         display: flex;
+         flex-direction: column;
+         gap: 8px;
+         align-items: flex-start;
+     }
+
+     #info {
+         /* position: absolute; top: 10px; left: 10px; z-index: 20; */ /* Handled by container */
+         color: white;
+         background: rgba(0,0,0,0.5);
+         padding: 8px 12px;
+         font-size: 0.9rem;
+         border-radius: 8px;
+         max-width: calc(100vw - 150px); /* Adjusted max-width */
+     }
+  
+     #game-ui {
+         position: absolute;
+         top: 10px;
+         right: 10px;
+         z-index: 20;
+         color: white;
+         background: rgba(0,0,0,0.5);
+         padding: 8px 12px;
+         font-size: 0.9rem;
+         border-radius: 8px;
+         text-align: right;
+     }
+  
+     #game-status {
+         font-weight: bold;
+         font-size: 1.1rem;
+         min-height: 1.5rem; /* Prevent layout shift */
+     }
+  
+     /* NEW: Style for the moved UI buttons */
+     #ui-buttons {
+         display: flex;
+         flex-direction: row;
+         gap: 8px;
+     }
+  
+     .ui-btn {
+         padding: 6px 10px;
+         background: rgba(255, 255, 255, 0.2);
+         border: 2px solid rgba(255, 255, 255, 0.3);
+         border-radius: 8px;
+         color: white;
+         font-weight: 600;
+         cursor: pointer;
+         font-size: 0.9rem;
+     }
+     .ui-btn:hover {
+         background: rgba(255, 255, 255, 0.3);
+     }
+
+
+     #mouse-lock-info {
+         position: absolute;
+         top: 50%;
+         left: 50%;
+         transform: translate(-50%, -50%);
+         background: rgba(0,0,0,0.7);
+         padding: 20px 40px;
+         border-radius: 10px;
+         font-size: 1.2rem;
+         font-weight: 600;
+         z-index: 80;
+         display: none; /* Hidden by default */
+     }
+ </style>
+</head>
+<body>
+ <!-- 3D Scene Container -->
+ <div id="container"></div>
+
+ <!-- MODIFIED: Left UI Container -->
+ <div id="left-ui-container">
+     <!-- Info Box -->
+     <div id="info">
+         <b>Controls:</b> (<b>WASD</b> or <b>Joystick</b>) Move | (<b>Space</b>) Jump & Reveal | (<b>E</b> or <b>Reveal Btn</b>) Reveal | (<b>R/F</b> or <b>Flag Btn</b>) Flag | (<b>Q</b> or <b>Btn</b>) Switch Camera
+     </div>
+     <!-- MODIFIED: UI Buttons moved here -->
+     <div id="ui-buttons">
+         <button id="camera-btn" class="ui-btn">Switch Camera</button>
+         <button id="new-game-btn" class="ui-btn">New Game (Lvl 1)</button>
+     </div>
+ </div>
+
+
+ <!-- Game Status UI -->
+ <div id="game-ui">
+     <div>Level: <span id="level-text">1</span></div>
+     <div>Mines Left: <span id="mines-text">0</span></div>
+     <div id="game-status" class="mt-2"></div>
+ </div>
+
+
+ <!-- Loading Screen -->
+ <div id="loader">
+     <div class="text-2xl font-bold animate-pulse">Loading Model...</div>
+ </div>
+
+
+
+
+ <!-- Input Selection Modal -->
+ <div id="input-modal">
+     <div class="bg-white/10 p-10 rounded-lg shadow-xl text-center">
+         <h2 class="text-3xl font-bold mb-6">Select Input Mode</h2>
+         <p class="mb-8">Is this a touch screen device?</p>
+         <div class="flex justify-center gap-6">
+             <button id="touch-btn" class="px-8 py-4 bg-blue-600 rounded-lg text-xl font-semibold hover:bg-blue-500 transition-colors">
+                 Yes (Touch)
+             </button>
+             <button id="keyboard-btn" class="px-8 py-4 bg-gray-600 rounded-lg text-xl font-semibold hover:bg-gray-500 transition-colors">
+                 No (Keyboard)
+             </button>
+         </div>
+     </div>
+ </div>
+
+
+
+
+ <!-- UI Element for Pointer Lock -->
+ <div id="mouse-lock-info">Click to control character</div>
+
+
+
+
+ <!-- On-Screen Touch Controls (Initially hidden) -->
+ <div id="touch-controls">
+     <!-- Joystick -->
+     <div id="joystick-area">
+         <div id="joystick-thumb"></div>
+     </div>
+     <!-- Action Buttons -->
+     <div id="action-buttons">
+         <div id="reveal-btn" class="action-btn">REVEAL</div>
+         <div id="jump-btn" class="action-btn">JUMP</div>
+         <div id="flag-btn" class="action-btn">FLAG</div>
+         <div id="crouch-btn" class="action-btn">CROUCH</div>
+     </div>
+ </div>
+
+
+
+
+ <!-- Three.js and GLTFLoader -->
+ <script type="importmap">
+     {
+         "imports": {
+             "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.min.js",
+             "GLTFLoader": "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/GLTFLoader.js"
+         }
+     }
+ </script>
+
+
+
+
+ <!-- Main Application Logic -->
+ <script type="module">
+     import * as THREE from 'three';
+     import { GLTFLoader } from 'GLTFLoader';
+
+
+     // --- Game Constants ---
+     const TILE_SIZE = 1.0; // Size of each tile in 3D space
+     const TILE_HEIGHT = 0.1; // Thickness of the tile
+
+
+     // --- Main Controller Class ---
+     class CharacterController {
+         constructor() {
+             // DOM Elements
+             this.container = document.getElementById('container');
+             this.loaderEl = document.getElementById('loader');
+             this.modalEl = document.getElementById('input-modal');
+             this.touchControlsEl = document.getElementById('touch-controls');
+             this.mouseLockInfoEl = document.getElementById('mouse-lock-info');
+          
+             // UI Elements
+             this.levelText = document.getElementById('level-text');
+             this.minesText = document.getElementById('mines-text');
+             this.gameStatusText = document.getElementById('game-status');
+             this.cameraBtn = document.getElementById('camera-btn');
+             this.newGameBtn = document.getElementById('new-game-btn');
+
+
+             // 3D Scene
+             this.scene = new THREE.Scene();
+             this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000); // Increased far plane
+             this.topDownCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+             this.cameraMode = 'follow'; // 'follow' or 'topDown'
+             this.renderer = new THREE.WebGLRenderer({ antialias: true });
+             this.clock = new THREE.Clock();
+          
+             // Character & Animation
+             this.model = null;
+             this.mixer = null;
+             this.animationsMap = new Map();
+             this.activeAction = null;
+             this.currentState = 'idle'; // 'idle', 'Walking', 'Running', 'jump', 'punch', 'sitting'
+             this.oneShotActive = false;
+          
+             // Input
+             this.inputMode = 'keyboard';
+             this.keysPressed = {};
+          
+             // Physics & Movement
+             this.moveDirection = new THREE.Vector3(); // (x = strafe, y = 0, z = forward)
+             this.rotationSpeed = Math.PI * 0.8;
+             this.targetYaw = 0;
+             this.currentYaw = 0;
+          
+             this.cameraYaw = 0;  
+             this.cameraPitch = 0;
+             this.reverseCamera = false;
+          
+             this.cameraDefaultOffset = new THREE.Vector3(0, 2.5, -5);
+          
+             this.worldForward = new THREE.Vector3();
+             this.finalVelocity = new THREE.Vector3();
+          
+             // Touch State
+             this.touchState = {
+                 joystick: { x: 0, y: 0, active: false },
+                 camera: { active: false, touchId: null, lastX: 0, lastY: 0 }
+             };
+          
+             // --- Minesweeper Game State ---
+             this.level = 1;
+             this.gridSize = 0;
+             this.mineCount = 0;
+             this.board = []; // 2D array for game logic
+             this.boardGroup = new THREE.Group(); // Holds all tile meshes
+             this.revealedCells = 0;
+             this.totalNonMineCells = 0;
+             this.minesFlagged = 0;
+             this.gameOver = false;
+             this.gameWin = false;
+             this.halfGridSize = 0; // For clamping robot position
+
+
+             // Tile Textures (Canvas)
+             this.tileTextures = this.createTileTextures();
+
+
+             // Highlighter
+             this.currentHighlightedTile = { x: -1, y: -1 };
+             this.highlighterMesh = null;
+
+
+             // Pre-bind all event listener methods
+             this.animate = this.animate.bind(this);
+             this.onWindowResize = this.onWindowResize.bind(this);
+             // Keyboard
+             this.boundOnMouseMove = this.onMouseMove.bind(this);
+             this.boundOnPointerLockChange = this.onPointerLockChange.bind(this);
+             this.boundOnKeyDown = this.onKeyDown.bind(this);
+             this.boundOnKeyUp = this.onKeyUp.bind(this);
+             this.boundOnContainerClick = this.onContainerClick.bind(this);
+             // Touch
+             this.boundOnTouchStart = this.onTouchStart.bind(this);
+             this.boundOnTouchMove = this.onTouchMove.bind(this);
+             this.boundOnTouchEnd = this.onTouchEnd.bind(this);
+             this.boundOnJoystickMove = this.onJoystickMove.bind(this);
+             this.boundOnJoystickEnd = this.onJoystickEnd.bind(this);
+             this.boundOnCrouchStart = this.onCrouchStart.bind(this);
+             this.boundOnCrouchEnd = this.onCrouchEnd.bind(this);
+             this.boundOnJumpStart = this.onJumpStart.bind(this);
+             // New Game Actions
+             this.boundOnRevealStart = this.onRevealStart.bind(this);
+             this.boundOnFlagStart = this.onFlagStart.bind(this);
+             this.boundSwitchCamera = this.switchCamera.bind(this);
+             this.boundStartNewGame = this.startNewGame.bind(this, 1);
+
+
+             this.init();
+         }
+      
+         init() {
+             // Scene
+             this.scene.background = new THREE.Color(0x333333);
+             this.scene.fog = new THREE.Fog(0x333333, 20, 100); // Adjusted fog
+
+
+             // Camera
+             this.camera.position.set(0, 2.5, -5);
+             this.camera.lookAt(0, 1.5, 0);
+          
+             // Top Down Camera (initial setup)
+             this.topDownCamera.position.set(0, 20, 0);
+             this.topDownCamera.lookAt(0, 0, 0);
+             this.scene.add(this.topDownCamera); // Add to scene
+
+
+             // Renderer
+             this.renderer.setSize(window.innerWidth, window.innerHeight);
+             this.renderer.shadowMap.enabled = true;
+             this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+             this.renderer.toneMappingExposure = 1;
+             this.container.appendChild(this.renderer.domElement);
+
+
+             // Lights
+             const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
+             hemiLight.position.set(0, 50, 0);
+             this.scene.add(hemiLight);
+
+
+             const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+             dirLight.position.set(20, 30, 10);
+             dirLight.castShadow = true;
+             dirLight.shadow.camera.top = 20;
+             dirLight.shadow.camera.bottom = -20;
+             dirLight.shadow.camera.left = -20;
+             dirLight.shadow.camera.right = 20;
+             dirLight.shadow.mapSize.width = 2048;
+             dirLight.shadow.mapSize.height = 2048;
+             this.scene.add(dirLight);
+          
+             // Add board group
+             this.scene.add(this.boardGroup);
+
+
+             // Add Highlighter Mesh
+             const highlighterGeo = new THREE.PlaneGeometry(TILE_SIZE * 0.95, TILE_SIZE * 0.95);
+             // --- MODIFICATION: Changed highlighter color to red and opacity to 0.4 ---
+             const highlighterMat = new THREE.MeshBasicMaterial({
+                 color: 0xff0000, // Was 0xffffff (white), now red
+                 transparent: true,
+                 opacity: 0.4, // Was 0.3
+                 side: THREE.DoubleSide
+             });
+             this.highlighterMesh = new THREE.Mesh(highlighterGeo, highlighterMat);
+             this.highlighterMesh.rotation.x = -Math.PI / 2; // Lay flat
+             this.highlighterMesh.visible = false;
+             this.scene.add(this.highlighterMesh);
+
+
+             // Load Model
+             const gltfLoader = new GLTFLoader();
+             gltfLoader.load(
+                 'https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb',
+                 (gltf) => this.onModelLoad(gltf),
+                 undefined,
+                 (error) => console.error(error)
+             );
+
+
+             // Bind UI Event Listeners
+             window.addEventListener('resize', this.onWindowResize);
+             document.getElementById('touch-btn').onclick = () => this.setupInputMode('touch');
+             document.getElementById('keyboard-btn').onclick = () => this.setupInputMode('keyboard');
+          
+             // New UI Listeners
+             this.cameraBtn.addEventListener('click', this.boundSwitchCamera);
+             this.newGameBtn.addEventListener('click', this.boundStartNewGame);
+          
+             // Start Game
+             this.startNewGame(1);
+         }
+      
+         onModelLoad(gltf) {
+             this.model = gltf.scene;
+             this.model.scale.set(0.4, 0.4, 0.4); // Slightly smaller for tiles
+             this.scene.add(this.model);
+
+
+             this.model.traverse(node => {
+                 if (node.isMesh) node.castShadow = true;
+             });
+
+
+             this.mixer = new THREE.AnimationMixer(this.model);
+
+
+             gltf.animations.forEach(clip => {
+                 const action = this.mixer.clipAction(clip);
+                 this.animationsMap.set(clip.name, action);
+             });
+
+
+             this.mixer.addEventListener('finished', (e) => {
+                 this.oneShotActive = false;
+                 this.currentState = 'idle';
+             });
+
+
+             this.fadeToAction('Idle', 0);
+             this.currentState = 'idle';
+
+
+             this.loaderEl.style.display = 'none';
+             this.modalEl.style.display = 'flex';
+         }
+      
+         setupInputMode(mode) {
+             this.inputMode = mode;
+             this.modalEl.style.display = 'none';
+
+
+             if (mode === 'keyboard') {
+                 this.initKeyboardControls();
+                 this.mouseLockInfoEl.style.display = 'block';
+             } else {
+                 this.initTouchControls();
+             }
+          
+             this.animate(); // Start the loop
+         }
+
+
+         // --- Game Logic ---
+      
+         startNewGame(level) {
+             this.gameOver = false;
+             this.gameWin = false;
+             this.level = level;
+             if (level > 100) this.level = 100; // Cap at 100
+          
+             // Level scaling
+             this.gridSize = Math.min(10 + Math.floor(this.level / 2), 40); // 10x10 up to 40x40
+             this.mineCount = Math.min(5 + Math.floor(this.level * 1.5), Math.floor(this.gridSize * this.gridSize * 0.25)); // 5 up to 25% of board
+          
+             this.halfGridSize = (this.gridSize * TILE_SIZE) / 2.0;
+             this.revealedCells = 0;
+             this.totalNonMineCells = (this.gridSize * this.gridSize) - this.mineCount;
+             this.minesFlagged = 0;
+          
+             // Create logic board
+             this.board = this.createMinefield(this.gridSize, this.mineCount);
+          
+             // Create visual board
+             this.createVisualBoard();
+
+
+             // Reset model
+             if (this.model) {
+                 this.model.position.set(0, 0, 0);
+                 this.targetYaw = 0;
+                 this.currentYaw = 0;
+             }
+          
+             // Reset highlighter
+             if (this.highlighterMesh) this.highlighterMesh.visible = false;
+             this.currentHighlightedTile = { x: -1, y: -1 };
+          
+             // Update UI
+             this.updateGameUI();
+             this.gameStatusText.textContent = '';
+          
+             // Update camera
+             this.updateTopDownCamera();
+         }
+
+
+         createMinefield(size, mines) {
+             let board = Array(size).fill(null).map(() => Array(size).fill(null).map(() => ({
+                 isMine: false,
+                 number: 0,
+                 isRevealed: false,
+                 isFlagged: false,
+                 mesh: null,
+                 materials: [] // To store original materials
+             })));
+
+
+             // Place mines
+             let minesPlaced = 0;
+             while (minesPlaced < mines) {
+                 const x = Math.floor(Math.random() * size);
+                 const y = Math.floor(Math.random() * size);
+                 if (!board[x][y].isMine) {
+                     board[x][y].isMine = true;
+                     minesPlaced++;
+                 }
+             }
+
+
+             // Calculate numbers
+             for (let x = 0; x < size; x++) {
+                 for (let y = 0; y < size; y++) {
+                     if (board[x][y].isMine) continue;
+                     let count = 0;
+                     for (let dx = -1; dx <= 1; dx++) {
+                         for (let dy = -1; dy <= 1; dy++) {
+                             if (dx === 0 && dy === 0) continue;
+                             const nx = x + dx;
+                             const ny = y + dy;
+                             if (nx >= 0 && nx < size && ny >= 0 && ny < size && board[nx][ny].isMine) {
+                                 count++;
+                             }
+                         }
+                     }
+                     board[x][y].number = count;
+                 }
+             }
+             return board;
+         }
+
+
+         createVisualBoard() {
+             // Clear old board
+             while (this.boardGroup.children.length) {
+                 this.boardGroup.remove(this.boardGroup.children[0]);
+             }
+          
+             const tileGeo = new THREE.BoxGeometry(TILE_SIZE * 0.95, TILE_HEIGHT, TILE_SIZE * 0.95);
+          
+             // --- Create all materials ---
+             // We create these *once* and share them among all tiles
+             // This is much more efficient.
+             const matHidden = new THREE.MeshPhongMaterial({ map: this.tileTextures.hidden });
+             const matFlag = new THREE.MeshPhongMaterial({ map: this.tileTextures.flag });
+             const matMine = new THREE.MeshPhongMaterial({ map: this.tileTextures.mine });
+             const matMineRed = new THREE.MeshPhongMaterial({ map: this.tileTextures.mineRed });
+             const matRevealedWhite = new THREE.MeshPhongMaterial({ map: this.tileTextures[0] }); 
+          
+             const numberMaterials = [
+                 matRevealedWhite, // 0 is just white
+                 new THREE.MeshPhongMaterial({ map: this.tileTextures[1] }),
+                 new THREE.MeshPhongMaterial({ map: this.tileTextures[2] }),
+                 new THREE.MeshPhongMaterial({ map: this.tileTextures[3] }),
+                 new THREE.MeshPhongMaterial({ map: this.tileTextures[4] }),
+                 new THREE.MeshPhongMaterial({ map: this.tileTextures[5] }),
+                 new THREE.MeshPhongMaterial({ map: this.tileTextures[6] }),
+                 new THREE.MeshPhongMaterial({ map: this.tileTextures[7] }),
+                 new THREE.MeshPhongMaterial({ map: this.tileTextures[8] }),
+             ];
+
+
+             for (let x = 0; x < this.gridSize; x++) {
+                 for (let y = 0; y < this.gridSize; y++) {
+                     // We create an array of 6 materials, one for each face of the cube.
+                     // The order is: [right, left, top, bottom, front, back]
+                     // Initially, we make all 6 faces use the 'hidden' material.
+                     const materials = [
+                         matHidden, // right
+                         matHidden, // left
+                         matHidden, // top (main)
+                         matHidden, // bottom
+                         matHidden, // front
+                         matHidden  // back
+                     ];
+
+
+                     const tileMesh = new THREE.Mesh(tileGeo, materials);
+                     tileMesh.position.set(
+                         (x - this.gridSize / 2 + 0.5) * TILE_SIZE,
+                         -TILE_HEIGHT / 2,
+                         (y - this.gridSize / 2 + 0.5) * TILE_SIZE
+                     );
+                     tileMesh.receiveShadow = true;
+                     this.boardGroup.add(tileMesh);
+                  
+                     // Store logic
+                     this.board[x][y].mesh = tileMesh;
+                     // Store references to all potential materials for this tile
+                     this.board[x][y].materials = {
+                         hidden: matHidden,
+                         flag: matFlag,
+                         mine: matMine,
+                         mineRed: matMineRed,
+                         number: numberMaterials[this.board[x][y].number],
+                         revealedWhite: matRevealedWhite // Store white side material
+                     };
+                 }
+             }
+         }
+      
+         updateTopDownCamera() {
+             const boardWorldSize = this.gridSize * TILE_SIZE;
+             // Position camera high enough to see the whole board
+             const camHeight = boardWorldSize * 1.5; // Adjust multiplier for fov
+             this.topDownCamera.position.set(0, camHeight, 0);
+             this.topDownCamera.lookAt(0, 0, 0);
+             this.topDownCamera.updateProjectionMatrix();
+         }
+      
+         updateHighlighter() {
+             if (this.gameOver || !this.model || this.gameWin) {
+                 if (this.highlighterMesh) this.highlighterMesh.visible = false;
+                 return;
+             }
+
+
+             const pos = this.getRobotGridPosition();
+
+
+             if (pos) {
+                 const tile = this.board[pos.x][pos.y];
+                
+                 if (tile && tile.mesh) {
+                     // Only update position if tile changed
+                     if (pos.x !== this.currentHighlightedTile.x || pos.y !== this.currentHighlightedTile.y) {
+                         this.currentHighlightedTile = pos;
+                         this.highlighterMesh.position.copy(tile.mesh.position);
+                         this.highlighterMesh.position.y = (TILE_HEIGHT / 2) + 0.01; // Position on top of the tile
+                     }
+                     this.highlighterMesh.visible = true;
+                 } else {
+                     this.highlighterMesh.visible = false;
+                     this.currentHighlightedTile = { x: -1, y: -1 };
+                 }
+             } else {
+                 this.highlighterMesh.visible = false;
+                 this.currentHighlightedTile = { x: -1, y: -1 };
+             }
+         }
+
+
+         getRobotGridPosition() {
+             if (!this.model) return null;
+          
+             const x = Math.floor(this.model.position.x / TILE_SIZE + this.gridSize / 2);
+             const y = Math.floor(this.model.position.z / TILE_SIZE + this.gridSize / 2);
+
+
+             if (x < 0 || x >= this.gridSize || y < 0 || y >= this.gridSize) {
+                 return null;
+             }
+             return { x, y };
+         }
+      
+         revealTile() {
+             // ***** FIX: Removed this.oneShotActive check *****
+             if (this.gameOver || this.gameWin) return;
+             const pos = this.getRobotGridPosition();
+             if (!pos) return;
+
+
+             const tile = this.board[pos.x][pos.y];
+             if (tile.isRevealed || tile.isFlagged) return;
+          
+             // Trigger punch animation for feedback
+             this.currentState = 'punch';
+          
+             this.recursiveReveal(pos.x, pos.y);
+          
+             if (tile.isMine) {
+                 // Game Over
+                 this.gameOver = true;
+                 this.revealAllMines(pos.x, pos.y);
+                 this.gameStatusText.textContent = 'GAME OVER!';
+                 this.gameStatusText.style.color = '#ff4444';
+                 this.newGameBtn.textContent = 'Play Again?';
+             } else {
+                 this.checkWinCondition();
+             }
+             this.updateGameUI();
+         }
+
+
+         recursiveReveal(x, y) {
+             if (x < 0 || x >= this.gridSize || y < 0 || y >= this.gridSize) return;
+             const tile = this.board[x][y];
+             if (tile.isRevealed || tile.isFlagged) return;
+
+
+             tile.isRevealed = true;
+             this.revealedCells++;
+             this.updateTileVisual(x, y);
+
+
+             if (tile.number === 0 && !tile.isMine) {
+                 // Flood fill
+                 for (let dx = -1; dx <= 1; dx++) {
+                     for (let dy = -1; dy <= 1; dy++) {
+                         if (dx === 0 && dy === 0) continue;
+                         this.recursiveReveal(x + dx, y + dy);
+                     }
+                 }
+             }
+         }
+      
+         flagTile() {
+             if (this.gameOver || this.gameWin || this.oneShotActive) return;
+             const pos = this.getRobotGridPosition();
+             if (!pos) return;
+
+
+             const tile = this.board[pos.x][pos.y];
+             if (tile.isRevealed) return;
+          
+             // Trigger crouch animation for feedback
+             this.currentState = 'sitting'; // Use sitting for flagging
+             setTimeout(() => { if (this.currentState === 'sitting') this.currentState = 'idle'; }, 300);
+
+
+             tile.isFlagged = !tile.isFlagged;
+             if (tile.isFlagged) {
+                 this.minesFlagged++;
+             } else {
+                 this.minesFlagged--;
+             }
+          
+             this.updateTileVisual(pos.x, pos.y);
+             this.updateGameUI();
+         }
+
+
+         checkWinCondition() {
+             if (this.revealedCells === this.totalNonMineCells) {
+                 this.gameWin = true;
+                 this.gameOver = true; // Stop input
+                 this.gameStatusText.textContent = `LEVEL ${this.level} CLEARED!`;
+                 this.gameStatusText.style.color = '#44ff44';
+                 this.revealAllMines(null, null, true); // Flag all mines
+                 this.newGameBtn.textContent = `Next Level (${this.level + 1})`;
+                 // Automatically start next level?
+                 setTimeout(() => {
+                     if (this.level < 100) {
+                         this.startNewGame(this.level + 1);
+                     } else {
+                         this.gameStatusText.textContent = 'ALL LEVELS CLEARED!';
+                         this.newGameBtn.textContent = 'Play Again?';
+                         this.level = 0; // Will reset to 1 on next click
+                     }
+                 }, 2000);
+             }
+         }
+
+
+         revealAllMines(hitX, hitY, isWin = false) {
+             for (let x = 0; x < this.gridSize; x++) {
+                 for (let y = 0; y < this.gridSize; y++) {
+                     const tile = this.board[x][y];
+                     if (tile.isMine) {
+                         tile.isRevealed = true;
+                         if (isWin) {
+                             tile.isFlagged = true;
+                         } else if (x === hitX && y === hitY) {
+                             tile.hit = true; // To color it red
+                         }
+                         this.updateTileVisual(x, y);
+                     }
+                 }
+             }
+         }
+      
+         // This function now updates all 6 faces of the cube, not just the top.
+         updateTileVisual(x, y) {
+             const tile = this.board[x][y];
+             if (!tile || !tile.mesh) return;
+          
+             let topMaterial; // Material for the top face (index 2)
+             let sideMaterial; // Material for the other 5 faces (0, 1, 3, 4, 5)
+          
+             if (tile.isRevealed) {
+                 if (tile.isMine) {
+                     topMaterial = tile.hit ? tile.materials.mineRed : tile.materials.mine;
+                 } else {
+                     topMaterial = tile.materials.number;
+                 }
+                 // All revealed tiles (numbers or mines) get the clean white 'revealedWhite' material on their sides.
+                 sideMaterial = tile.materials.revealedWhite;
+          
+             } else if (tile.isFlagged) {
+                 topMaterial = tile.materials.flag;
+                 // Flagged tiles also get white sides, as seen in the screenshot.
+                 sideMaterial = tile.materials.revealedWhite; 
+             } else {
+                 // Not revealed, not flagged = hidden
+                 // All 6 faces are hidden.
+                 topMaterial = tile.materials.hidden;
+                 sideMaterial = tile.materials.hidden;
+             }
+          
+             // Get the mesh's array of 6 materials
+             const materials = tile.mesh.material;
+             
+             // Assign the new materials to *all* 6 faces.
+             materials[0] = sideMaterial; // right
+             materials[1] = sideMaterial; // left
+             materials[2] = topMaterial;  // top (the main one)
+             materials[3] = sideMaterial; // bottom
+             materials[4] = sideMaterial; // front
+             materials[5] = sideMaterial; // back
+          
+             // Tell Three.js to apply these material changes.
+             tile.mesh.material.needsUpdate = true;
+         }
+
+
+         updateGameUI() {
+             this.levelText.textContent = this.level;
+             this.minesText.textContent = this.mineCount - this.minesFlagged;
+         }
+      
+         switchCamera() {
+             this.cameraMode = (this.cameraMode === 'follow') ? 'topDown' : 'follow';
+             if (this.cameraMode === 'topDown') {
+                 this.mouseLockInfoEl.style.display = 'none';
+                 if (document.pointerLockElement === this.container) {
+                     document.exitPointerLock();
+                 }
+             } else {
+                 if(this.inputMode === 'keyboard') {
+                     this.mouseLockInfoEl.style.display = 'block';
+                 }
+             }
+         }
+      
+         // --- *** THIS IS THE KEY FIX *** ---
+         // The previous code re-used one canvas, so all textures
+         // pointed to the same image (the last one drawn).
+         // This new function creates a *separate canvas* for *every texture*.
+         createTileTextures() {
+             const textures = {};
+             const size = 128; // Texture size
+          
+             const colors = [
+                 '#0000ff', '#008200', '#ff0000', '#000084',
+                 '#840000', '#008284', '#840084', '#000000'
+             ];
+
+
+             // Helper function:
+             // NOW CREATES A NEW CANVAS FOR EACH TEXTURE
+             const createTexture = (baseColor, drawFn) => {
+                 const canvas = document.createElement('canvas'); // Create new canvas
+                 const ctx = canvas.getContext('2d'); // Get its context
+                 canvas.width = size;
+                 canvas.height = size;
+              
+                 ctx.fillStyle = baseColor; // Use specified base color
+                 ctx.fillRect(0, 0, size, size);
+                 drawFn(ctx, size); // Draw text/emoji/etc. over it
+                 
+                 const texture = new THREE.CanvasTexture(canvas); // Create texture from *this* canvas
+                 texture.colorSpace = THREE.SRGBColorSpace;
+                 return texture;
+             };
+
+
+             // 0 (Empty) - "clean white background"
+             textures[0] = createTexture('#FFFFFF', () => {});
+          
+             // 1-8
+             for(let i = 1; i <= 8; i++) {
+                 // Numbers on a white background
+                 textures[i] = createTexture('#FFFFFF', (ctx, size) => {
+                     ctx.fillStyle = colors[i - 1];
+                     ctx.font = 'bold 80px sans-serif';
+                     ctx.textAlign = 'center';
+                     ctx.textBaseline = 'middle';
+                     ctx.fillText(i.toString(), size / 2, size / 2 + 5);
+                 });
+             }
+          
+             // Hidden (A sensible gray)
+             textures.hidden = createTexture('#888888', (ctx, size) => {
+                 ctx.strokeStyle = '#999999';
+                 ctx.lineWidth = 10;
+                 ctx.strokeRect(0, 0, size, size);
+             });
+
+
+             // Flag (Using 🚩 on white)
+             textures.flag = createTexture('#FFFFFF', (ctx, size) => {
+                 ctx.fillStyle = 'red'; 
+                 ctx.font = 'bold 80px sans-serif';
+                 ctx.textAlign = 'center';
+                 ctx.textBaseline = 'middle';
+                 ctx.fillText('🚩', size / 2, size / 2 + 5);
+             });
+
+
+             // Mine (Using 💣 on light gray)
+             textures.mine = createTexture('#DDDDDD', (ctx, size) => {
+                 ctx.fillStyle = 'black';
+                 ctx.font = 'bold 80px sans-serif';
+                 ctx.textAlign = 'center';
+                 ctx.textBaseline = 'middle';
+                 ctx.fillText('💣', size / 2, size / 2 + 5);
+             });
+
+
+             // Mine (Hit) (Using 🤯 on red)
+             textures.mineRed = createTexture('red', (ctx, size) => {
+                 ctx.fillStyle = 'black';
+                 ctx.font = 'bold 80px sans-serif';
+                 ctx.textAlign = 'center';
+                 ctx.textBaseline = 'middle';
+                 ctx.fillText('🤯', size / 2, size / 2 + 5);
+             });
+
+
+             return textures;
+         }
+         // --- *** END OF FIX *** ---
+
+
+         // --- Animation ---
+      
+         fadeToAction(name, duration) {
+             const nextAction = this.animationsMap.get(name);
+             if (!nextAction) {
+                 console.warn(`Animation not found: ${name}`);
+                 return;
+             }
+          
+             if (this.activeAction === nextAction) return;
+
+
+             if (this.activeAction) {
+                 this.activeAction.fadeOut(duration);
+             }
+
+
+             nextAction
+                 .reset()
+                 .setEffectiveTimeScale(1)
+                 .setEffectiveWeight(1)
+                 .fadeIn(duration)
+                 .play();
+
+
+             this.activeAction = nextAction;
+         }
+      
+         playOneShotAction(name) {
+             if (this.oneShotActive) return;
+          
+             const action = this.animationsMap.get(name);
+             if (!action) {
+                 console.warn(`One-shot animation not found: ${name}`);
+                 return;
+             }
+          
+             this.oneShotActive = true;
+             action.setLoop(THREE.LoopOnce, 1);
+             this.fadeToAction(name, 0.2);
+         }
+
+
+         // --- Input Handlers (Keyboard & Mouse) ---
+
+
+         initKeyboardControls() {
+             document.addEventListener('keydown', this.boundOnKeyDown);
+             document.addEventListener('keyup', this.boundOnKeyUp);
+             this.container.addEventListener('click', this.boundOnContainerClick);
+             document.addEventListener('pointerlockchange', this.boundOnPointerLockChange);
+         }
+      
+         // --- MODIFICATION: Added e.preventDefault() for spacebar ---
+         onKeyDown(e) {
+             if (e.key === ' ') {
+                 e.preventDefault(); // Stop spacebar from clicking UI buttons
+             }
+             this.keysPressed[e.key.toLowerCase()] = true;
+             this.handleKeyAction(e.key.toLowerCase(), true, e.repeat);
+         }
+      
+         onKeyUp(e) {
+             this.keysPressed[e.key.toLowerCase()] = false;
+             this.handleKeyAction(e.key.toLowerCase(), false, false);
+         }
+
+
+         onContainerClick() {
+             if (this.cameraMode === 'follow') {
+                 this.container.requestPointerLock();
+             }
+         }
+      
+         onPointerLockChange() {
+             if (document.pointerLockElement === this.container) {
+                 document.addEventListener('mousemove', this.boundOnMouseMove, false);
+                 this.mouseLockInfoEl.style.display = 'none';
+             } else {
+                 document.removeEventListener('mousemove', this.boundOnMouseMove, false);
+                 if (this.inputMode === 'keyboard' && this.cameraMode === 'follow') {
+                     this.mouseLockInfoEl.style.display = 'block';
+                 }
+             }
+         }
+      
+         onMouseMove(e) {
+             if (!e.movementX && !e.movementY) return;
+             if (this.cameraMode !== 'follow') return;
+          
+             this.cameraYaw -= e.movementX * 0.003;
+             this.cameraPitch -= e.movementY * 0.003;
+             this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch, -Math.PI / 3, Math.PI / 2.5);
+         }
+
+
+         handleKeyAction(key, isDown, isRepeat) {
+             if (isDown && !isRepeat) {
+                 // Game actions
+                 switch (key) {
+                     case 'q':
+                         this.switchCamera();
+                         break;
+                     case ' ': // Spacebar
+                         this.revealTile(); // Run the reveal logic
+                         this.currentState = 'jump'; // Override animation to 'jump'
+                         return; // Action complete
+                     case 'e':
+                     case 'c': case 'v': case 'b': // Old punch keys
+                     case 'g': case 'h': // 'f' removed from here
+                         this.revealTile();
+                         return; // Don't let punch state override
+                     case 'r':
+                     case 'f': // 'f' is for flag now
+                         this.flagTile();
+                         return;
+                 }
+             }
+          
+             if (this.oneShotActive) return;
+
+
+             if (isDown) {
+                 if (isRepeat) {
+                     switch (key) {
+                         // ' ' (space) is handled above
+                         case 'z':
+                             return;
+                     }
+                 }
+                 // Set state on first press
+                 switch (key) {
+                     /* ' ' (space) is handled above
+                     case ' ':
+                         this.currentState = 'jump';
+                         break;
+                     */
+                     case 'z':
+                         this.currentState = 'sitting';
+                         break;
+                     case 's':
+                         if (!isRepeat) {
+                             this.targetYaw += Math.PI;
+                         }
+                         this.reverseCamera = true;
+                         break;
+                 }
+             } else {
+                  if (key === 'z') {
+                     this.currentState = 'idle'; // Stop crouching on key up
+                  }
+                  if (key === 's') {
+                     this.reverseCamera = false; // Reset camera on key up
+                  }
+             }
+         }
+
+
+         // --- Input Handlers (Touch) ---
+
+
+         initTouchControls() {
+             this.touchControlsEl.style.display = 'block';
+
+
+             // Joystick
+             const joystickArea = document.getElementById('joystick-area');
+             this.joystick = {
+                 area: joystickArea,
+                 thumb: document.getElementById('joystick-thumb'),
+                 rect: joystickArea.getBoundingClientRect(),
+                 radius: joystickArea.getBoundingClientRect().width / 2,
+             };
+             this.joystick.center = {
+                 x: this.joystick.rect.left + this.joystick.radius,
+                 y: this.joystick.rect.top + this.joystick.radius
+             };
+          
+             joystickArea.addEventListener('touchstart', this.boundOnJoystickMove, { passive: false });
+             joystickArea.addEventListener('touchmove', this.boundOnJoystickMove, { passive: false });
+             joystickArea.addEventListener('touchend', this.boundOnJoystickEnd, false);
+             joystickArea.addEventListener('touchcancel', this.boundOnJoystickEnd, false);
+
+
+             // Action Buttons
+             document.getElementById('jump-btn').addEventListener('touchstart', this.boundOnJumpStart, { passive: false });
+             document.getElementById('reveal-btn').addEventListener('touchstart', this.boundOnRevealStart, { passive: false });
+             document.getElementById('flag-btn').addEventListener('touchstart', this.boundOnFlagStart, { passive: false });
+          
+             // Crouch button
+             const crouchBtn = document.getElementById('crouch-btn');
+             crouchBtn.addEventListener('touchstart', this.boundOnCrouchStart, { passive: false });
+             crouchBtn.addEventListener('touchend', this.boundOnCrouchEnd, false);
+             crouchBtn.addEventListener('touchcancel', this.boundOnCrouchEnd, false);
+
+
+             // Camera Touch Control
+             this.renderer.domElement.addEventListener('touchstart', this.boundOnTouchStart, { passive: false });
+             this.renderer.domElement.addEventListener('touchmove', this.boundOnTouchMove, { passive: false });
+             this.renderer.domElement.addEventListener('touchend', this.boundOnTouchEnd, false);
+             this.renderer.domElement.addEventListener('touchcancel', this.boundOnTouchEnd, false);
+         }
+      
+         onCrouchStart(e) {
+             e.preventDefault();
+             this.currentState = 'sitting';
+             document.getElementById('crouch-btn').style.background = 'rgba(255,255,255,0.5)';
+         }
+         onCrouchEnd(e) {
+             e.preventDefault();
+             this.currentState = 'idle';
+             document.getElementById('crouch-btn').style.background = 'rgba(255,255,255,0.2)';
+         }
+         onJumpStart(e) {
+             e.preventDefault();
+             if (this.oneShotActive) return;
+             this.currentState = 'jump';
+         }
+         onRevealStart(e) {
+             e.preventDefault();
+             this.revealTile();
+         }
+         onFlagStart(e) {
+             e.preventDefault();
+             this.flagTile();
+         }
+      
+         onJoystickMove(e) {
+             e.preventDefault();
+             this.touchState.joystick.active = true;
+             const touch = e.touches[0];
+             let x = touch.clientX - this.joystick.center.x;
+             let y = touch.clientY - this.joystick.center.y;
+             const distance = Math.sqrt(x*x + y*y);
+             const angle = Math.atan2(y, x);
+
+
+             if (distance > this.joystick.radius) {
+                 x = Math.cos(angle) * this.joystick.radius;
+                 y = Math.sin(angle) * this.joystick.radius;
+             }
+             this.joystick.thumb.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+             this.touchState.joystick.x = x / this.joystick.radius;
+             this.touchState.joystick.y = y / this.joystick.radius;
+         }
+      
+         onJoystickEnd(e) {
+             e.preventDefault();
+             this.touchState.joystick.active = false;
+             this.touchState.joystick.x = 0;
+             this.touchState.joystick.y = 0;
+             this.joystick.thumb.style.transform = 'translate(-50%, -50%)';
+         }
+      
+         onTouchStart(e) {
+             if (e.target.closest('#touch-controls') || e.target.closest('#game-ui') || e.target.closest('#left-ui-container')) return;
+             e.preventDefault();
+             if (this.cameraMode !== 'follow') return;
+          
+             if (!this.touchState.camera.active) {
+                 const touch = e.changedTouches[0];
+                 this.touchState.camera.active = true;
+                 this.touchState.camera.touchId = touch.identifier;
+                 this.touchState.camera.lastX = touch.clientX;
+                 this.touchState.camera.lastY = touch.clientY;
+             }
+         }
+      
+         onTouchMove(e) {
+             if (!this.touchState.camera.active || this.cameraMode !== 'follow') return;
+             e.preventDefault();
+             let cameraTouch = null;
+             for (let touch of e.changedTouches) {
+                 if (touch.identifier === this.touchState.camera.touchId) {
+                     cameraTouch = touch;
+                     break;
+                 }
+             }
+             if (!cameraTouch) return;
+
+
+             const deltaX = cameraTouch.clientX - this.touchState.camera.lastX;
+             const deltaY = cameraTouch.clientY - this.touchState.camera.lastY;
+             this.touchState.camera.lastX = cameraTouch.clientX;
+             this.touchState.camera.lastY = cameraTouch.clientY;
+          
+             this.cameraYaw -= deltaX * 0.01;
+             this.cameraPitch -= deltaY * 0.01;
+             this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch, -Math.PI / 3, Math.PI / 2.5);
+         }
+      
+         onTouchEnd(e) {
+             for (let touch of e.changedTouches) {
+                 if (touch.identifier === this.touchState.camera.touchId) {
+                     this.touchState.camera.active = false;
+                     this.touchState.camera.touchId = null;
+                     break;
+                 }
+             }
+         }
+      
+         // --- Update & Render Loop ---
+
+
+         updateMovementState() {
+             let moveFwd = 0;
+             let rotate = 0;
+             let isRunning = false;
+             let isMoving = false;
+
+
+             if (this.inputMode === 'keyboard') {
+                 isRunning = this.keysPressed['shift'];
+              
+                 if (this.keysPressed['w']) {
+                     moveFwd = 1;
+                     isMoving = true;
+                 } else if (this.keysPressed['s']) {
+                     moveFwd = 1;
+                     isMoving = true;
+                 }
+              
+                 if (this.keysPressed['a']) {
+                     rotate = 1; // Rotate Left
+                 } else if (this.keysPressed['d']) {
+                     rotate = -1; // Rotate Right
+                 }
+             } else { // Touch controls
+                 moveFwd = -this.touchState.joystick.y;
+                 rotate = -this.touchState.joystick.x;
+                 const magnitude = Math.sqrt(moveFwd*moveFwd + rotate*rotate);
+              
+                 if (magnitude > 0.1) isMoving = true;
+                 if (magnitude > 0.8 && moveFwd > 0.8) isRunning = true;
+                
+                 // Use moveFwd for forward/backward, rotate for turning
+                 moveFwd = Math.max(0, moveFwd); // Only allow forward movement from joystick
+                 if (Math.abs(rotate) < 0.2) rotate = 0;
+                 if (moveFwd < 0.2) moveFwd = 0;
+
+
+             }
+          
+             this.moveDirection.z = moveFwd;
+             this.moveDirection.x = rotate;
+
+
+             if (!this.oneShotActive) {
+                 const isMovementState = this.currentState === 'idle' || this.currentState === 'Walking' || this.currentState === 'Running';
+              
+                 if (this.currentState === 'sitting') {
+                     // Stay sitting
+                 } else if (isMovementState) {
+                     if (isMoving || rotate !== 0) {
+                         this.currentState = isRunning ? 'Running' : 'Walking';
+                     } else {
+                         this.currentState = 'idle';
+                     }
+                 }
+             }
+         }
+      
+         updateCharacter(delta) {
+             if (!this.model || !this.mixer) return;
+          
+             // 1. Determine movement and animation state
+             if (!this.gameOver) {
+                 this.updateMovementState();
+             } else {
+                 // No movement if game over
+                 this.moveDirection.z = 0;
+                 this.moveDirection.x = 0;
+                 if (!this.oneShotActive) this.currentState = 'idle';
+             }
+
+
+             // 2. Play one-shot actions if needed
+             if (this.currentState === 'jump') {
+                 this.playOneShotAction('Jump');
+             } else if (this.currentState === 'punch') {
+                 this.playOneShotAction('Punch');
+             }
+          
+             // 3. Play looping animations
+             if (!this.oneShotActive) {
+                 if (this.currentState === 'sitting') {
+                     this.fadeToAction('Sitting', 0.2);
+                 } else if (this.currentState === 'Running') {
+                     this.fadeToAction('Running', 0.2);
+                 } else if (this.currentState === 'Walking') {
+                     this.fadeToAction('Walking', 0.2);
+                 } else {
+                     this.fadeToAction('Idle', 0.2);
+                 }
+             }
+          
+             // 4. Update Model Rotation (Yaw)
+             if (this.moveDirection.x !== 0) { // A/D keys
+                 this.targetYaw += (this.moveDirection.x * this.rotationSpeed * delta);
+             }
+          
+             this.targetYaw = (this.targetYaw + 3*Math.PI) % (2*Math.PI) - Math.PI;
+
+
+             const lerpFactor = 15 * delta;
+             this.currentYaw = THREE.MathUtils.lerp(this.currentYaw, this.targetYaw, lerpFactor);
+             this.model.rotation.y = this.currentYaw;
+
+
+             // 5. Update Model Position
+             const moveSpeed = (this.currentState === 'Running' ? 4 : (this.currentState === 'Walking' ? 2 : 0));
+          
+             if (moveSpeed > 0 && this.moveDirection.z > 0) {
+                 this.model.getWorldDirection(this.worldForward);
+                 this.finalVelocity.copy(this.worldForward).multiplyScalar(moveSpeed * delta);
+                 this.model.position.add(this.finalVelocity);
+             }
+          
+             // 6. Clamp model position to board
+             this.model.position.x = THREE.MathUtils.clamp(this.model.position.x, -this.halfGridSize, this.halfGridSize);
+             this.model.position.z = THREE.MathUtils.clamp(this.model.position.z, -this.halfGridSize, this.halfGridSize);
+          
+             // 7. Update Camera Position (Follow Cam)
+             const cameraPivot = new THREE.Vector3().copy(this.model.position);
+             cameraPivot.y += 1.5;
+            
+             const finalCameraOffset = new THREE.Vector3().copy(this.cameraDefaultOffset);
+             if (this.reverseCamera) {
+                 finalCameraOffset.z *= -1;
+             }
+          
+             const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.cameraYaw);
+             const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), this.cameraPitch);
+             const modelYawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.currentYaw);
+             const finalRotation = new THREE.Quaternion().multiply(modelYawQuat, yawQuat).multiply(pitchQuat);
+          
+             finalCameraOffset.applyQuaternion(finalRotation);
+
+
+             this.camera.position.copy(cameraPivot).add(finalCameraOffset);
+             this.camera.lookAt(cameraPivot);
+
+
+             // Update highlighter position
+             this.updateHighlighter();
+         }
+      
+         animate() {
+             requestAnimationFrame(this.animate);
+             const delta = this.clock.getDelta();
+
+
+             if (this.mixer) this.mixer.update(delta);
+          
+             this.updateCharacter(delta);
+
+
+             // Render with the correct camera
+             const activeCamera = this.cameraMode === 'topDown' ? this.topDownCamera : this.camera;
+             this.renderer.render(this.scene, activeCamera);
+         }
+
+
+         // --- Window Resize ---
+         onWindowResize() {
+             const width = window.innerWidth;
+             const height = window.innerHeight;
+          
+             this.camera.aspect = width / height;
+             this.camera.updateProjectionMatrix();
+          
+             this.topDownCamera.aspect = width / height;
+             this.topDownCamera.updateProjectionMatrix();
+          
+             this.renderer.setSize(width, height);
+          
+             if (this.inputMode === 'touch' && this.joystick) {
+                 this.joystick.rect = this.joystick.area.getBoundingClientRect();
+                 this.joystick.radius = this.joystick.rect.width / 2;
+                 this.joystick.center = {
+                     x: this.joystick.rect.left + this.joystick.radius,
+                     y: this.joystick.rect.top + this.joystick.radius
+                 };
+             }
+         }
+     }
+  
+     // --- Start the application ---
+     const app = new CharacterController();
+
+
+ </script>
+</body>
+</html>
+

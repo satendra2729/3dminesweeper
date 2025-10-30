@@ -745,7 +745,7 @@
                  if (magnitude > 0.1) {
                      isMoving = true; moveFwd = 1; rotate = 0;
                      isRunning = magnitude > 0.8;
-                     const angle = Math.atan2(joyY, joyX);
+                     const angle = Math.atan2(-joyY, joyX);
                      this.targetYaw = angle + (Math.PI / 2);
                  } else {
                      isMoving = false; moveFwd = 0; rotate = 0; isRunning = false;

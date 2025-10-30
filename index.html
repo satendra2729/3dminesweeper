@@ -3,20 +3,17 @@
 <head>
  <meta charset="UTF-8">
  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
- <title>3D Robot Minesweeper</title>
+ <title>3D Robot Minesweeper (2-Player)</title>
  <!--
      This application is a 3D Minesweeper game built with Three.js.
      - You control a robot on a 3D grid.
      - You can select between keyboard/mouse or touch controls.
+     - NEW: Added 2-Player local split-screen mode for keyboard.
+     - NEW: Players can select names and colors.
+     - NEW: Split-screen rendering for 'follow' camera, shared for 'topDown'.
      - The game logic implements classic Minesweeper rules.
      - Textures for the tiles (numbers, flags, mines) are dynamically generated using HTML Canvas.
-     - NEW: Level colors and background scenes are procedurally generated for each level.
-     - NEW: Added 2 camera modes (Top Down, Follow) mapped to 'V' key.
-     - NEW: Added manual level selection.
-     - NEW: Stylized Level/Mines counter.
-     - NEW: Replaced 2D flag emoji with a 3D flag object.
-     - NEW: Added zoom controls for Top Down AND 3rd Person views.
-     - NEW: Added a red circle base to the 3D flag for top-down visibility.
+     - Level colors and background scenes are procedurally generated for each level.
  -->
  <script src="https://cdn.tailwindcss.com"></script>
  <style>
@@ -49,9 +46,11 @@
          justify-content: center;
          align-items: center;
          z-index: 100;
+         flex-direction: column;
+         gap: 1rem;
      }
-     /* Input selection modal */
-     #input-modal {
+     /* Base Modal Style */
+     .modal-backdrop {
          position: fixed;
          top: 0;
          left: 0;
@@ -64,6 +63,82 @@
          z-index: 90;
          backdrop-filter: blur(10px);
      }
+     .modal-content {
+         background: rgba(255, 255, 255, 0.1);
+         padding: 2.5rem;
+         border-radius: 0.5rem;
+         box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+         text-align: center;
+     }
+     .modal-btn {
+         padding: 1rem 2rem;
+         border-radius: 0.5rem;
+         font-size: 1.125rem;
+         font-weight: 600;
+         transition: all 0.2s ease;
+         border: none;
+         cursor: pointer;
+     }
+     .modal-btn-primary {
+         background-color: #2563EB; /* blue-600 */
+         color: white;
+     }
+     .modal-btn-primary:hover {
+         background-color: #1D4ED8; /* blue-700 */
+     }
+     .modal-btn-secondary {
+         background-color: #4B5563; /* gray-600 */
+         color: white;
+     }
+     .modal-btn-secondary:hover {
+         background-color: #374151; /* gray-700 */
+     }
+
+     /* Player Setup Modal */
+     #player-setup-modal {
+         display: none; /* Hidden by default */
+     }
+     .player-setup-grid {
+         display: grid;
+         grid-template-columns: 1fr;
+         gap: 1.5rem;
+         margin-top: 1.5rem;
+         margin-bottom: 2rem;
+     }
+     @media (min-width: 640px) {
+         .player-setup-grid {
+             grid-template-columns: 1fr 1fr;
+             gap: 2.5rem;
+         }
+     }
+     .player-column {
+         display: flex;
+         flex-direction: column;
+         gap: 1rem;
+         padding: 1.5rem;
+         background: rgba(0,0,0,0.2);
+         border-radius: 0.5rem;
+     }
+     .player-column label {
+         font-weight: 600;
+         font-size: 0.875rem;
+         text-align: left;
+         color: rgba(255,255,255,0.7);
+     }
+     .player-column input, .player-column select {
+         width: 100%;
+         padding: 0.5rem 0.75rem;
+         border-radius: 0.375rem;
+         background: rgba(0,0,0,0.4);
+         border: 1px solid rgba(255,255,255,0.3);
+         color: white;
+         font-size: 1rem;
+     }
+     .player-column select option {
+         background: #333;
+         color: white;
+     }
+
      /* Touch Controls Container */
      #touch-controls {
          position: fixed;
@@ -72,8 +147,8 @@
          width: 100%;
          height: 100%;
          z-index: 50;
-         pointer-events: none; /* Pass clicks through unless on a button */
-         display: none; /* Hidden by default */
+         pointer-events: none;
+         display: none;
      }
      /* Joystick */
      #joystick-area {
@@ -86,7 +161,7 @@
          max-height: 150px;
          background: rgba(255, 255, 255, 0.1);
          border-radius: 50%;
-         pointer-events: auto; /* Enable touch on this area */
+         pointer-events: auto;
      }
      #joystick-thumb {
          position: absolute;
@@ -108,9 +183,9 @@
          right: 5vw;
          display: grid;
          grid-template-columns: 1fr 1fr;
-         grid-template-rows: 1fr 1fr 1fr; /* Added a row */
+         grid-template-rows: 1fr 1fr 1fr;
          gap: 2vw;
-         pointer-events: auto; /* Enable touch on this area */
+         pointer-events: auto;
      }
      .action-btn {
          width: 15vw;
@@ -133,14 +208,12 @@
      @media (min-width: 640px) {
          .action-btn { font-size: 16px; }
      }
-     /* Button layout updated */
      #jump-btn { grid-column: 2 / 3; grid-row: 1 / 2; }
-     #reveal-btn { grid-column: 1 / 2; grid-row: 1 / 2; } /* Was punch */
-     #flag-btn { grid-column: 1 / 2; grid-row: 2 / 3; } /* New */
+     #reveal-btn { grid-column: 1 / 2; grid-row: 1 / 2; }
+     #flag-btn { grid-column: 1 / 2; grid-row: 2 / 3; }
      #crouch-btn { grid-column: 2 / 3; grid-row: 2 / 3; }
   
      /* Top UI */
-     /* Container for left-aligned UI elements */
      #left-ui-container {
          position: absolute;
          top: 10px;
@@ -151,18 +224,14 @@
          gap: 8px;
          align-items: flex-start;
      }
-
-
      #info {
-         /* position: absolute; top: 10px; left: 10px; z-index: 20; */ /* Handled by container */
          color: white;
          background: rgba(0,0,0,0.5);
          padding: 8px 12px;
          font-size: 0.9rem;
          border-radius: 8px;
-         max-width: calc(100vw - 200px); /* Adjusted max-width */
+         max-width: calc(100vw - 200px);
      }
-  
      #game-ui {
          position: absolute;
          top: 10px;
@@ -175,20 +244,16 @@
          border-radius: 8px;
          text-align: right;
      }
-  
      #game-status {
          font-weight: bold;
          font-size: 1.1rem;
-         min-height: 1.5rem; /* Prevent layout shift */
+         min-height: 1.5rem;
      }
-  
-     /* NEW: Style for the moved UI buttons */
      #ui-buttons {
          display: flex;
          flex-direction: row;
          gap: 8px;
      }
-  
      .ui-btn {
          padding: 6px 10px;
          background: rgba(255, 255, 255, 0.2);
@@ -202,10 +267,6 @@
      .ui-btn:hover {
          background: rgba(255, 255, 255, 0.3);
      }
-
-
-
-
      #mouse-lock-info {
          position: absolute;
          top: 50%;
@@ -217,16 +278,16 @@
          font-size: 1.2rem;
          font-weight: 600;
          z-index: 80;
-         display: none; /* Hidden by default */
+         display: none;
      }
      
-     /* NEW: Zoom controls */
+     /* Zoom controls */
      #zoom-controls {
          position: fixed;
          bottom: 10px;
          left: 10px;
          z-index: 60;
-         display: none; /* Hidden by default, shown via JS */
+         display: none;
          flex-direction: column;
          gap: 8px;
          pointer-events: auto;
@@ -248,26 +309,43 @@
      .zoom-btn:hover {
          background: rgba(255, 255, 255, 0.3);
      }
+
+     /* Player Name Tags (for 3D space) */
+     .player-tag {
+        position: absolute;
+        z-index: 10;
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        pointer-events: none;
+        transform: translateX(-50%); /* Center horizontally */
+        white-space: nowrap;
+        display: none; /* Hidden by default */
+     }
  </style>
 </head>
 <body>
  <!-- 3D Scene Container -->
  <div id="container"></div>
 
+ <!-- Player Name Tags -->
+ <div id="p1-tag" class="player-tag">Player 1</div>
+ <div id="p2-tag" class="player-tag">Player 2</div>
 
- <!-- MODIFIED: Left UI Container -->
+
+ <!-- Left UI Container -->
  <div id="left-ui-container">
-     <!-- Info Box -->
      <div id="info">
-         <!-- MODIFIED: Changed 'Q' to 'V' -->
-         <b>Controls:</b> (<b>WASD</b> or <b>Joystick</b>) Move | (<b>Space</b>) Jump & Reveal | (<b>E</b> or <b>Reveal Btn</b>) Reveal | (<b>R/F</b> or <b>Flag Btn</b>) Flag | (<b>V</b> or <b>Btn</b>) Switch Camera
+         <b>P1:</b> (<b>WASD</b>) Move | (<b>E</b>) Reveal | (<b>R/F</b>) Flag | (<b>Space</b>) Jump<br>
+         <b>P2:</b> (<b>Arrows</b>) Move | (<b>;</b>) Reveal | (<b>'</b>) Flag | (<b>Enter</b>) Jump
      </div>
-     <!-- MODIFIED: UI Buttons moved here -->
      <div id="ui-buttons">
          <button id="camera-btn" class="ui-btn">Switch Camera</button>
          <button id="new-game-btn" class="ui-btn">New Game (Lvl 1)</button>
      </div>
-     <!-- NEW: Manual Level Selection -->
      <div id="level-select-container" class="flex items-center gap-2">
          <label for="level-input" class="text-sm font-medium">Go to Level:</label>
          <input type="number" id="level-input" min="1" max="100" class="w-16 p-1 rounded bg-black/50 text-white border border-white/30 text-center" value="1">
@@ -275,12 +353,8 @@
      </div>
  </div>
 
-
-
-
  <!-- Game Status UI -->
  <div id="game-ui">
-     <!-- MODIFIED: Added Tailwind classes for styling -->
      <div class="font-bold text-lg tracking-wide text-white/90">
          Level: <span id="level-text" class="text-white">1</span>
      </div>
@@ -290,66 +364,117 @@
      <div id="game-status" class="mt-2"></div>
  </div>
 
-
-
-
  <!-- Loading Screen -->
  <div id="loader">
-     <div class="text-2xl font-bold animate-pulse">Loading Model...</div>
+     <div class="text-2xl font-bold animate-pulse">Loading...</div>
+     <div id="loader-subtext" class="text-lg">Loading 3D Models...</div>
  </div>
 
-
-
-
-
-
-
-
  <!-- Input Selection Modal -->
- <div id="input-modal">
-     <div class="bg-white/10 p-10 rounded-lg shadow-xl text-center">
+ <div id="input-modal" class="modal-backdrop">
+     <div class="modal-content">
          <h2 class="text-3xl font-bold mb-6">Select Input Mode</h2>
          <p class="mb-8">Is this a touch screen device?</p>
          <div class="flex justify-center gap-6">
-             <button id="touch-btn" class="px-8 py-4 bg-blue-600 rounded-lg text-xl font-semibold hover:bg-blue-500 transition-colors">
+             <button id="touch-btn" class="modal-btn modal-btn-primary">
                  Yes (Touch)
              </button>
-             <button id="keyboard-btn" class="px-8 py-4 bg-gray-600 rounded-lg text-xl font-semibold hover:bg-gray-500 transition-colors">
+             <button id="keyboard-btn" class="modal-btn modal-btn-secondary">
                  No (Keyboard)
              </button>
          </div>
      </div>
  </div>
 
+ <!-- NEW: Game Mode Selection Modal -->
+ <div id="game-mode-modal" class="modal-backdrop" style="display: none;">
+     <div class="modal-content">
+         <h2 class="text-3xl font-bold mb-6">Select Game Mode</h2>
+         <div class="flex justify-center gap-6">
+             <button id="single-player-btn" class="modal-btn modal-btn-primary">
+                 1 Player
+             </button>
+             <button id="multi-player-btn" class="modal-btn modal-btn-primary">
+                 2 Player (Local)
+             </button>
+         </div>
+         <button id="game-mode-back-btn" class="modal-btn modal-btn-secondary mt-6">Back</button>
+     </div>
+ </div>
 
+ <!-- NEW: Player Setup Modal -->
+ <div id="player-setup-modal" class="modal-backdrop">
+     <div class="modal-content w-11/12 max-w-2xl">
+         <h2 id="player-setup-title" class="text-3xl font-bold mb-2">Player Setup</h2>
+         <p class="mb-6 text-white/70">Enter names and choose colors.</p>
+         
+         <div class="player-setup-grid">
+             <!-- Player 1 Column -->
+             <div class="player-column">
+                 <h3 class="text-xl font-bold text-white">Player 1</h3>
+                 <div>
+                     <label for="p1-name">Name:</label>
+                     <input type="text" id="p1-name" value="Player 1" maxlength="15">
+                 </div>
+                 <div>
+                     <label for="p1-color">Color:</label>
+                     <select id="p1-color">
+                         <option value="#ff4444" selected>Red</option>
+                         <option value="#4488ff">Blue</option>
+                         <option value="#44ff44">Green</option>
+                         <option value="#ffff44">Yellow</option>
+                         <option value="#ff8844">Orange</option>
+                         <option value="#ff44ff">Pink</option>
+                     </select>
+                 </div>
+                 <div class="text-xs text-left text-white/50 p-2 bg-black/20 rounded">
+                    <b>Controls:</b> WASD (Move), E (Reveal), R/F (Flag), Space (Jump)
+                 </div>
+             </div>
+             <!-- Player 2 Column -->
+             <div id="p2-column" class="player-column">
+                 <h3 class="text-xl font-bold text-white">Player 2</h3>
+                 <div>
+                     <label for="p2-name">Name:</label>
+                     <input type="text" id="p2-name" value="Player 2" maxlength="15">
+                 </div>
+                 <div>
+                     <label for="p2-color">Color:</label>
+                     <select id="p2-color">
+                         <option value="#ff4444">Red</option>
+                         <option value="#4488ff" selected>Blue</option>
+                         <option value="#44ff44">Green</option>
+                         <option value="#ffff44">Yellow</option>
+                         <option value="#ff8844">Orange</option>
+                         <option value="#ff44ff">Pink</option>
+                     </select>
+                 </div>
+                 <div class="text-xs text-left text-white/50 p-2 bg-black/20 rounded">
+                    <b>Controls:</b> Arrow Keys (Move), ; (Reveal), ' (Flag), Enter (Jump)
+                 </div>
+             </div>
+         </div>
 
-
-
-
+         <button id="start-game-btn" class="modal-btn modal-btn-primary w-full">Start Game</button>
+         <button id="player-setup-back-btn" class="modal-btn modal-btn-secondary mt-4 w-full">Back</button>
+     </div>
+ </div>
 
 
  <!-- UI Element for Pointer Lock -->
  <div id="mouse-lock-info">Click to control character</div>
 
-
-
-
- <!-- NEW: Zoom Controls -->
+ <!-- Zoom Controls -->
  <div id="zoom-controls">
      <button id="zoom-in-btn" class="zoom-btn">+</button>
      <button id="zoom-out-btn" class="zoom-btn">-</button>
  </div>
 
-
-
-
  <!-- On-Screen Touch Controls (Initially hidden) -->
  <div id="touch-controls">
-     <!-- Joystick -->
      <div id="joystick-area">
          <div id="joystick-thumb"></div>
      </div>
-     <!-- Action Buttons -->
      <div id="action-buttons">
          <div id="reveal-btn" class="action-btn">REVEAL</div>
          <div id="jump-btn" class="action-btn">JUMP</div>
@@ -357,13 +482,6 @@
          <div id="crouch-btn" class="action-btn">CROUCH</div>
      </div>
  </div>
-
-
-
-
-
-
-
 
  <!-- Three.js and GLTFLoader -->
  <script type="importmap">
@@ -375,26 +493,422 @@
      }
  </script>
 
-
-
-
-
-
-
-
  <!-- Main Application Logic -->
  <script type="module">
      import * as THREE from 'three';
      import { GLTFLoader } from 'GLTFLoader';
 
-
-
-
      // --- Game Constants ---
-     const TILE_SIZE = 1.0; // Size of each tile in 3D space
-     const TILE_HEIGHT = 0.1; // Thickness of the tile
+     const TILE_SIZE = 1.0;
+     const TILE_HEIGHT = 0.1;
+     // NEW: Player control mappings
+     const PLAYER_CONTROLS = {
+         1: {
+             up: 'w', down: 's', left: 'a', right: 'd',
+             jump: ' ', reveal: 'e', revealAlt: 'c', flag: 'r', flagAlt: 'f',
+             crouch: 'z'
+         },
+         2: {
+             up: 'arrowup', down: 'arrowdown', left: 'arrowleft', right: 'arrowright',
+             jump: 'enter', reveal: ';', revealAlt: '.', flag: "'", flagAlt: 'l',
+             crouch: 'control' // Right control key
+         }
+     };
 
+     // --- NEW: Player Class ---
+     class Player {
+         constructor(id, name, color, keybindings, gameController) {
+             this.id = id;
+             this.name = name;
+             this.color = new THREE.Color(color);
+             this.keybindings = keybindings;
+             this.game = gameController; // Reference to the main class
+             this.scene = gameController.scene;
 
+             // 3D Model & Animation
+             this.model = null;
+             this.mixer = null;
+             this.animationsMap = new Map();
+             this.activeAction = null;
+             this.currentState = 'idle';
+             this.oneShotActive = false;
+          
+             // Physics & Movement
+             this.moveDirection = new THREE.Vector3();
+             this.rotationSpeed = Math.PI * 0.8;
+             this.targetYaw = 0;
+             this.currentYaw = 0;
+             this.reverseCamera = false;
+             this.worldForward = new THREE.Vector3();
+             this.finalVelocity = new THREE.Vector3();
+
+             // Input
+             this.keysPressed = {};
+
+             // Camera (for split-screen)
+             this.camera = new THREE.PerspectiveCamera(45, (window.innerWidth / 2) / window.innerHeight, 0.1, 1000);
+             this.followCameraOffset = new THREE.Vector3(0, 2.5, -5);
+             this.cameraYaw = 0;
+             this.cameraPitch = 0;
+
+             // Highlighter
+             this.currentHighlightedTile = { x: -1, y: -1 };
+             this.highlighterMesh = null;
+
+             // UI
+             this.tagElement = document.getElementById(`p${id}-tag`);
+             this.tagElement.textContent = this.name;
+             this.tagElement.style.color = color;
+             this.tagElement.style.display = 'block';
+
+             this.createHighlighter();
+         }
+
+         createHighlighter() {
+             const highlighterGeo = new THREE.PlaneGeometry(TILE_SIZE * 0.95, TILE_SIZE * 0.95);
+             const highlighterMat = new THREE.MeshBasicMaterial({
+                 color: this.color,
+                 transparent: true,
+                 opacity: 0.5,
+                 side: THREE.DoubleSide
+             });
+             this.highlighterMesh = new THREE.Mesh(highlighterGeo, highlighterMat);
+             this.highlighterMesh.rotation.x = -Math.PI / 2;
+             this.highlighterMesh.visible = false;
+             this.scene.add(this.highlighterMesh);
+         }
+
+         loadModel(gltfLoader) {
+             return new Promise((resolve, reject) => {
+                 gltfLoader.load(
+                     'https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb',
+                     (gltf) => {
+                         this.model = gltf.scene;
+                         this.model.scale.set(0.4, 0.4, 0.4);
+                         this.scene.add(this.model);
+
+                         // Clone materials to apply unique color
+                         this.model.traverse(node => {
+                             if (node.isMesh) {
+                                 node.castShadow = true;
+                                 // Check if material is an array (multi-material mesh)
+                                 if (Array.isArray(node.material)) {
+                                     node.material = node.material.map(mat => {
+                                         const newMat = mat.clone();
+                                         if (newMat.color) {
+                                            newMat.color.lerp(this.color, 0.5); // Blend with base color
+                                         }
+                                         return newMat;
+                                     });
+                                 } else if (node.material) {
+                                     node.material = node.material.clone();
+                                     if (node.material.color) {
+                                        node.material.color.lerp(this.color, 0.5); // Blend 50/50
+                                     }
+                                 }
+                             }
+                         });
+
+                         this.mixer = new THREE.AnimationMixer(this.model);
+                         gltf.animations.forEach(clip => {
+                             const action = this.mixer.clipAction(clip);
+                             this.animationsMap.set(clip.name, action);
+                         });
+
+                         this.mixer.addEventListener('finished', () => {
+                             this.oneShotActive = false;
+                             this.currentState = 'idle';
+                         });
+
+                         this.fadeToAction('Idle', 0);
+                         this.currentState = 'idle';
+                         resolve();
+                     },
+                     undefined,
+                     (error) => reject(error)
+                 );
+             });
+         }
+
+         handleKeyAction(key, isDown) {
+             const bindings = this.keybindings;
+             if (isDown && !this.keysPressed[key]) { // First press
+                 // Game actions
+                 switch (key) {
+                     case bindings.jump:
+                         this.revealTile();
+                         this.currentState = 'jump';
+                         break;
+                     case bindings.reveal:
+                     case bindings.revealAlt:
+                         this.revealTile();
+                         break;
+                     case bindings.flag:
+                     case bindings.flagAlt:
+                         this.flagTile();
+                         break;
+                 }
+             }
+             
+             this.keysPressed[key] = isDown; // Update state
+
+             if (this.oneShotActive) return;
+
+             if (isDown) {
+                 switch (key) {
+                     case bindings.crouch:
+                         this.currentState = 'sitting';
+                         break;
+                     case bindings.down:
+                         if (!this.keysPressed[key]) { // First press
+                             this.targetYaw += Math.PI;
+                         }
+                         this.reverseCamera = true;
+                         break;
+                 }
+             } else { // Key up
+                 if (key === bindings.crouch) {
+                     this.currentState = 'idle';
+                 }
+                 if (key === bindings.down) {
+                     this.reverseCamera = false;
+                 }
+             }
+         }
+         
+         revealTile() {
+            if (this.game.gameOver || this.game.gameWin) return;
+            const pos = this.getRobotGridPosition();
+            if (!pos) return;
+
+            const tile = this.game.board[pos.x][pos.y];
+            if (tile.isRevealed || tile.isFlagged) return;
+          
+            this.currentState = 'punch'; // Animation feedback
+            this.game.recursiveReveal(pos.x, pos.y, this); // Pass this player
+         }
+
+         flagTile() {
+            if (this.game.gameOver || this.game.gameWin || this.oneShotActive) return;
+            const pos = this.getRobotGridPosition();
+            if (!pos) return;
+
+            const tile = this.game.board[pos.x][pos.y];
+            if (tile.isRevealed) return;
+          
+            this.currentState = 'sitting';
+            setTimeout(() => { if (this.currentState === 'sitting') this.currentState = 'idle'; }, 300);
+
+            tile.isFlagged = !tile.isFlagged;
+            this.game.updateTileVisual(pos.x, pos.y); 
+            this.game.updateGameUI(); // Global UI
+         }
+         
+         getRobotGridPosition() {
+             if (!this.model) return null;
+             const { x, z } = this.model.position;
+             const gridX = Math.floor(x / TILE_SIZE + this.game.gridSize / 2);
+             const gridY = Math.floor(z / TILE_SIZE + this.game.gridSize / 2);
+
+             if (gridX < 0 || gridX >= this.game.gridSize || gridY < 0 || gridY >= this.game.gridSize) {
+                 return null;
+             }
+             return { x: gridX, y: gridY };
+         }
+
+         updateMovementState() {
+             let moveFwd = 0;
+             let rotate = 0;
+             let isRunning = false;
+             let isMoving = false;
+             
+             const bindings = this.keybindings;
+
+             if (this.game.inputMode === 'keyboard') {
+                 isRunning = this.keysPressed['shift']; // P1 only
+              
+                 if (this.keysPressed[bindings.up]) {
+                     moveFwd = 1; isMoving = true;
+                 } else if (this.keysPressed[bindings.down]) {
+                     moveFwd = 1; isMoving = true;
+                 }
+                 if (this.keysPressed[bindings.left]) {
+                     rotate = 1;
+                 } else if (this.keysPressed[bindings.right]) {
+                     rotate = -1;
+                 }
+             } else { // Touch (only for P1)
+                 const joyX = this.game.touchState.joystick.x;
+                 const joyY = this.game.touchState.joystick.y;
+                 const magnitude = Math.sqrt(joyX * joyX + joyY * joyY);
+
+                 if (magnitude > 0.1) {
+                     isMoving = true; moveFwd = 1; rotate = 0;
+                     isRunning = magnitude > 0.8;
+                     const angle = Math.atan2(joyY, joyX);
+                     this.targetYaw = angle + (Math.PI / 2);
+                 } else {
+                     isMoving = false; moveFwd = 0; rotate = 0; isRunning = false;
+                 }
+             }
+          
+             this.moveDirection.z = moveFwd;
+             this.moveDirection.x = rotate;
+
+             if (!this.oneShotActive) {
+                 const isMovementState = ['idle', 'Walking', 'Running'].includes(this.currentState);
+                 if (this.currentState === 'sitting') {
+                     // Stay sitting
+                 } else if (isMovementState) {
+                     if (isMoving || rotate !== 0) {
+                         this.currentState = isRunning ? 'Running' : 'Walking';
+                     } else {
+                         this.currentState = 'idle';
+                     }
+                 }
+             }
+         }
+      
+         update(delta) {
+             if (!this.model || !this.mixer) return;
+          
+             // 1. Determine movement and animation state
+             if (!this.game.gameOver) {
+                 this.updateMovementState();
+             } else {
+                 this.moveDirection.z = 0; this.moveDirection.x = 0;
+                 if (!this.oneShotActive) this.currentState = 'idle';
+             }
+
+             // 2. Play one-shot actions
+             if (this.currentState === 'jump') this.playOneShotAction('Jump');
+             else if (this.currentState === 'punch') this.playOneShotAction('Punch');
+          
+             // 3. Play looping animations
+             if (!this.oneShotActive) {
+                 if (this.currentState === 'sitting') this.fadeToAction('Sitting', 0.2);
+                 else if (this.currentState === 'Running') this.fadeToAction('Running', 0.2);
+                 else if (this.currentState === 'Walking') this.fadeToAction('Walking', 0.2);
+                 else this.fadeToAction('Idle', 0.2);
+             }
+          
+             // 4. Update Model Rotation (Yaw)
+             if (this.moveDirection.x !== 0) { // A/D or Left/Right keys
+                 this.targetYaw += (this.moveDirection.x * this.rotationSpeed * delta);
+             }
+             this.currentYaw = THREE.MathUtils.lerp(this.currentYaw, this.targetYaw, 15 * delta);
+             this.model.rotation.y = this.currentYaw;
+
+             // 5. Update Model Position
+             const moveSpeed = (this.currentState === 'Running' ? 4 : (this.currentState === 'Walking' ? 2 : 0));
+             if (moveSpeed > 0 && this.moveDirection.z > 0) {
+                 this.model.getWorldDirection(this.worldForward);
+                 this.finalVelocity.copy(this.worldForward).multiplyScalar(moveSpeed * delta);
+                 this.model.position.add(this.finalVelocity);
+             }
+          
+             // 6. Clamp model position
+             const { halfGridSize } = this.game;
+             this.model.position.x = THREE.MathUtils.clamp(this.model.position.x, -halfGridSize, halfGridSize);
+             this.model.position.z = THREE.MathUtils.clamp(this.model.position.z, -halfGridSize, halfGridSize);
+          
+             // 7. Update Follow Camera
+             const cameraPivot = new THREE.Vector3().copy(this.model.position);
+             cameraPivot.y += 1.5;
+             let finalCameraOffset = this.followCameraOffset.clone();
+             if (this.reverseCamera) finalCameraOffset.z *= -1;
+            
+             const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.cameraYaw);
+             const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), this.cameraPitch);
+             const modelYawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.currentYaw);
+             const finalRotation = new THREE.Quaternion().multiply(modelYawQuat, yawQuat).multiply(pitchQuat);
+             finalCameraOffset.applyQuaternion(finalRotation);
+             
+             this.camera.position.copy(cameraPivot).add(finalCameraOffset);
+             this.camera.lookAt(cameraPivot);
+
+             // 8. Update Highlighter
+             this.updateHighlighter();
+
+             // 9. Update Name Tag
+             this.updateTagPosition();
+         }
+         
+         updateTagPosition() {
+             const pos = new THREE.Vector3().copy(this.model.position);
+             pos.y += 1.2; // Position above robot's head
+             const activeCamera = this.game.getActiveCameraForPlayer(this.id);
+             pos.project(activeCamera);
+
+             const width = window.innerWidth;
+             const height = window.innerHeight;
+             const widthHalf = width / 2;
+             const heightHalf = height / 2;
+
+             let screenX = (pos.x * widthHalf) + widthHalf;
+             const screenY = - (pos.y * heightHalf) + heightHalf;
+             
+             // Adjust X position for split screen
+             if (this.game.gameMode === 'multi' && this.game.cameraStyle === 'follow') {
+                 if (this.id === 1) {
+                    screenX = (pos.x * (widthHalf / 2)) + (widthHalf / 2);
+                 } else {
+                    screenX = (pos.x * (widthHalf / 2)) + widthHalf + (widthHalf / 2);
+                 }
+             }
+             
+             // Hide if behind camera or off-screen
+             if (pos.z > 1 || screenX < -50 || screenX > width + 50 || screenY < -50 || screenY > height + 50) {
+                 this.tagElement.style.display = 'none';
+             } else {
+                 this.tagElement.style.display = 'block';
+                 this.tagElement.style.left = `${screenX}px`;
+                 this.tagElement.style.top = `${screenY}px`;
+             }
+         }
+
+         updateHighlighter() {
+             if (this.game.gameOver || !this.model || this.game.gameWin) {
+                 if (this.highlighterMesh) this.highlighterMesh.visible = false;
+                 return;
+             }
+             const pos = this.getRobotGridPosition();
+             if (pos) {
+                 const tile = this.game.board[pos.x][pos.y];
+                 if (tile && tile.mesh) {
+                     if (pos.x !== this.currentHighlightedTile.x || pos.y !== this.currentHighlightedTile.y) {
+                         this.currentHighlightedTile = pos;
+                         this.highlighterMesh.position.copy(tile.mesh.position);
+                         this.highlighterMesh.position.y = (TILE_HEIGHT / 2) + 0.01;
+                     }
+                     this.highlighterMesh.visible = true;
+                 } else {
+                     this.highlighterMesh.visible = false;
+                 }
+             } else {
+                 this.highlighterMesh.visible = false;
+             }
+         }
+
+         fadeToAction(name, duration) {
+             const nextAction = this.animationsMap.get(name);
+             if (!nextAction) return;
+             if (this.activeAction === nextAction) return;
+             if (this.activeAction) this.activeAction.fadeOut(duration);
+             nextAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(duration).play();
+             this.activeAction = nextAction;
+         }
+      
+         playOneShotAction(name) {
+             if (this.oneShotActive) return;
+             const action = this.animationsMap.get(name);
+             if (!action) return;
+             this.oneShotActive = true;
+             action.setLoop(THREE.LoopOnce, 1);
+             this.fadeToAction(name, 0.2);
+         }
+     }
+     // --- END Player Class ---
 
 
      // --- Main Controller Class ---
@@ -403,7 +917,10 @@
              // DOM Elements
              this.container = document.getElementById('container');
              this.loaderEl = document.getElementById('loader');
+             this.loaderSubtextEl = document.getElementById('loader-subtext');
              this.modalEl = document.getElementById('input-modal');
+             this.gameModeModalEl = document.getElementById('game-mode-modal');
+             this.playerSetupModalEl = document.getElementById('player-setup-modal');
              this.touchControlsEl = document.getElementById('touch-controls');
              this.mouseLockInfoEl = document.getElementById('mouse-lock-info');
           
@@ -413,119 +930,71 @@
              this.gameStatusText = document.getElementById('game-status');
              this.cameraBtn = document.getElementById('camera-btn');
              this.newGameBtn = document.getElementById('new-game-btn');
-             
-             // NEW: Level Selection UI
              this.levelInput = document.getElementById('level-input');
              this.levelGoBtn = document.getElementById('level-go-btn');
-
-
-
-
+             
              // 3D Scene
              this.scene = new THREE.Scene();
-             this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000); // Increased far plane
              this.topDownCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-             
-             // --- MODIFICATION: Camera View Management ---
-             this.cameraStyle = 'topDown'; // 'topDown', 'follow'. 'topDown' is new default.
-          
+             this.cameraStyle = 'topDown';
              this.renderer = new THREE.WebGLRenderer({ antialias: true });
              this.clock = new THREE.Clock();
+             this.gltfLoader = new GLTFLoader();
           
-             // Character & Animation
-             this.model = null;
-             this.mixer = null;
-             this.animationsMap = new Map();
-             this.activeAction = null;
-             this.currentState = 'idle'; // 'idle', 'Walking', 'Running', 'jump', 'punch', 'sitting'
-             this.oneShotActive = false;
+             // Players
+             this.player1 = null;
+             this.player2 = null;
           
              // Input
-             this.inputMode = 'keyboard';
-             this.keysPressed = {};
+             this.inputMode = 'keyboard'; // 'keyboard' or 'touch'
+             this.gameMode = 'single'; // 'single' or 'multi'
           
-             // Physics & Movement
-             this.moveDirection = new THREE.Vector3(); // (x = strafe, y = 0, z = forward)
-             this.rotationSpeed = Math.PI * 0.8;
-             this.targetYaw = 0;
-             this.currentYaw = 0;
-          
-             this.cameraYaw = 0;  
-             this.cameraPitch = 0;
-             this.reverseCamera = false;
-          
-             // MODIFICATION: Renamed cameraDefaultOffset to be specific
-             this.followCameraOffset = new THREE.Vector3(0, 2.5, -5);
-          
-             this.worldForward = new THREE.Vector3();
-             this.finalVelocity = new THREE.Vector3();
-          
-             // Touch State
+             // Touch State (Only for P1)
              this.touchState = {
                  joystick: { x: 0, y: 0, active: false },
                  camera: { active: false, touchId: null, lastX: 0, lastY: 0 }
              };
           
-             // --- Minesweeper Game State ---
+             // Minesweeper Game State
              this.level = 1;
              this.gridSize = 0;
              this.mineCount = 0;
-             this.board = []; // 2D array for game logic
-             this.boardGroup = new THREE.Group(); // Holds all tile meshes
+             this.board = [];
+             this.boardGroup = new THREE.Group();
              this.revealedCells = 0;
              this.totalNonMineCells = 0;
              this.minesFlagged = 0;
              this.gameOver = false;
              this.gameWin = false;
-             this.halfGridSize = 0; // For clamping robot position
+             this.halfGridSize = 0;
 
+             // Level Theming
+             this.levelColor = '#333333';
+             this.levelBackgroundColor = '#111111';
+             this.sceneryGroup = new THREE.Group();
 
-
-
-             // --- NEW: Level Theming ---
-             this.levelColor = '#333333'; // Default color
-             this.levelBackgroundColor = '#111111'; // Default background
-             this.sceneryGroup = new THREE.Group(); // To hold procedural scenery
-
-
-
-
-             // Tile Textures (Canvas)
-             // MODIFIED: Initialized as empty, will be generated in startNewGame
+             // Tile Textures
              this.tileTextures = {};
 
-
-
-
-             // Highlighter
-             this.currentHighlightedTile = { x: -1, y: -1 };
-             this.highlighterMesh = null;
-             
-             // --- MODIFICATION: 3D Flag reusable assets ---
+             // 3D Flag reusable assets
              this.flagPoleGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.6, 8);
-             this.flagPoleMat = new THREE.MeshBasicMaterial({ color: 0x8B4513 }); // Brown
+             this.flagPoleMat = new THREE.MeshBasicMaterial({ color: 0x8B4513 });
              this.flagClothGeo = new THREE.PlaneGeometry(0.3, 0.2);
-             this.flagClothMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide }); // Red
-             // --- NEW: Added flag base assets ---
-             this.flagBaseGeo = new THREE.CircleGeometry(0.2, 16); // 0.2 radius, 16 segments
-             this.flagBaseMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide }); // Red
+             this.flagClothMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide });
+             this.flagBaseGeo = new THREE.CircleGeometry(0.2, 16);
+             this.flagBaseMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide });
              
-             // NEW: Zoom
+             // Zoom
              this.defaultTopDownHeight = 20;
 
-
-
-
-             // Pre-bind all event listener methods
+             // Pre-bind methods
              this.animate = this.animate.bind(this);
              this.onWindowResize = this.onWindowResize.bind(this);
-             // Keyboard
              this.boundOnMouseMove = this.onMouseMove.bind(this);
              this.boundOnPointerLockChange = this.onPointerLockChange.bind(this);
              this.boundOnKeyDown = this.onKeyDown.bind(this);
              this.boundOnKeyUp = this.onKeyUp.bind(this);
              this.boundOnContainerClick = this.onContainerClick.bind(this);
-             // Touch
              this.boundOnTouchStart = this.onTouchStart.bind(this);
              this.boundOnTouchMove = this.onTouchMove.bind(this);
              this.boundOnTouchEnd = this.onTouchEnd.bind(this);
@@ -534,93 +1003,51 @@
              this.boundOnCrouchStart = this.onCrouchStart.bind(this);
              this.boundOnCrouchEnd = this.onCrouchEnd.bind(this);
              this.boundOnJumpStart = this.onJumpStart.bind(this);
-             // New Game Actions
              this.boundOnRevealStart = this.onRevealStart.bind(this);
              this.boundOnFlagStart = this.onFlagStart.bind(this);
-             // MODIFICATION: Renamed switchCamera to cycleCameraView
              this.boundCycleCameraView = this.cycleCameraView.bind(this);
              this.boundStartNewGame = this.startNewGame.bind(this, 1);
-             // NEW: Level Selection
              this.boundGoToLevel = this.goToLevel.bind(this);
-             // NEW: Zoom
              this.boundZoomCamera = this.zoomCamera.bind(this);
-
-
-
 
              this.init();
          }
       
-         // --- NEW: Helper function for seeded random number ---
-         /**
-          * Creates a simple seeded pseudo-random number generator.
-          * This ensures that Level 1 *always* has the same color,
-          * Level 2 *always* has the same (different) color, etc.
-          */
          mulberry32(a) {
              return function() {
-                 a |= 0;
-                 a = a + 0x6D2B79F5 | 0;
+                 a |= 0; a = a + 0x6D2B79F5 | 0;
                  var t = Math.imul(a ^ a >>> 15, 1 | a);
                  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
                  return ((t ^ t >>> 14) >>> 0) / 4294967296;
              }
          }
-
-
-
-
-         // --- NEW: Helper function to generate level-specific colors ---
+         
          generateLevelColor(level) {
-             const seed = level * 12345; // Use level as seed
-             const rand = this.mulberry32(seed);
+             const rand = this.mulberry32(level * 12345);
              const hue = Math.floor(rand() * 360);
-             const saturation = Math.floor(rand() * 30) + 70; // 70-100% saturation
-             const lightness = Math.floor(rand() * 20) + 20; // 20-40% lightness (dark)
+             const saturation = Math.floor(rand() * 30) + 70;
+             const lightness = Math.floor(rand() * 20) + 20;
              return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
          }
 
-
-
-
          init() {
-             // Scene
-             // MODIFIED: Background and fog are now set in startNewGame
              this.scene.background = new THREE.Color(this.levelBackgroundColor);
              this.scene.fog = new THREE.Fog(this.levelBackgroundColor, 20, 100); 
 
-
-
-
-             // Camera
-             this.camera.position.set(0, 2.5, -5);
-             this.camera.lookAt(0, 1.5, 0);
-          
-             // Top Down Camera (initial setup)
              this.topDownCamera.position.set(0, 20, 0);
              this.topDownCamera.lookAt(0, 0, 0);
-             this.scene.add(this.topDownCamera); // Add to scene
+             this.scene.add(this.topDownCamera);
 
-
-
-
-             // Renderer
              this.renderer.setSize(window.innerWidth, window.innerHeight);
              this.renderer.shadowMap.enabled = true;
              this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
              this.renderer.toneMappingExposure = 1;
+             this.renderer.setScissorTest(true); // Enable for split-screen
              this.container.appendChild(this.renderer.domElement);
 
-
-
-
-             // Lights
              const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
              hemiLight.position.set(0, 50, 0);
              this.scene.add(hemiLight);
-
-
-
 
              const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
              dirLight.position.set(20, 30, 10);
@@ -633,111 +1060,43 @@
              dirLight.shadow.mapSize.height = 2048;
              this.scene.add(dirLight);
           
-             // Add board group
              this.scene.add(this.boardGroup);
-             // NEW: Add scenery group
              this.scene.add(this.sceneryGroup);
 
-
-
-
-             // Add Highlighter Mesh
-             const highlighterGeo = new THREE.PlaneGeometry(TILE_SIZE * 0.95, TILE_SIZE * 0.95);
-             // --- MODIFICATION: Changed highlighter color to red and opacity to 0.4 ---
-             const highlighterMat = new THREE.MeshBasicMaterial({
-                 color: 0xff0000, // Was 0xffffff (white), now red
-                 transparent: true,
-                 opacity: 0.4, // Was 0.3
-                 side: THREE.DoubleSide
-             });
-             this.highlighterMesh = new THREE.Mesh(highlighterGeo, highlighterMat);
-             this.highlighterMesh.rotation.x = -Math.PI / 2; // Lay flat
-             this.highlighterMesh.visible = false;
-             this.scene.add(this.highlighterMesh);
-
-
-
-
-             // Load Model
-             const gltfLoader = new GLTFLoader();
-             gltfLoader.load(
-                 'https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb',
-                 (gltf) => this.onModelLoad(gltf),
-                 undefined,
-                 (error) => console.error(error)
-             );
-
-
-
-
-             // Bind UI Event Listeners
+             // Bind UI
              window.addEventListener('resize', this.onWindowResize);
+             // Modal 1: Input
              document.getElementById('touch-btn').onclick = () => this.setupInputMode('touch');
              document.getElementById('keyboard-btn').onclick = () => this.setupInputMode('keyboard');
-          
-             // MODIFICATION: Changed to new camera cycle function
+             
+             // Modal 2: Game Mode
+             document.getElementById('game-mode-back-btn').onclick = () => {
+                 this.gameModeModalEl.style.display = 'none';
+                 this.modalEl.style.display = 'flex';
+             };
+             document.getElementById('single-player-btn').onclick = () => this.setupGameMode('single');
+             document.getElementById('multi-player-btn').onclick = () => this.setupGameMode('multi');
+
+             // Modal 3: Player Setup
+             document.getElementById('player-setup-back-btn').onclick = () => {
+                 this.playerSetupModalEl.style.display = 'none';
+                 this.gameModeModalEl.style.display = 'flex';
+             };
+             document.getElementById('start-game-btn').onclick = () => this.initGame();
+
+
              this.cameraBtn.addEventListener('click', this.boundCycleCameraView);
              this.newGameBtn.addEventListener('click', this.boundStartNewGame);
-             
-             // NEW: Level Selection Listeners
              this.levelGoBtn.addEventListener('click', this.boundGoToLevel);
              this.levelInput.addEventListener('keydown', (e) => {
-                 if (e.key === 'Enter') {
-                     e.preventDefault(); // Stop form submission
-                     this.boundGoToLevel();
-                 }
+                 if (e.key === 'Enter') { e.preventDefault(); this.boundGoToLevel(); }
              });
              
-             // NEW: Zoom Listeners
              document.getElementById('zoom-in-btn').onclick = () => this.zoomCamera(0.8);
              document.getElementById('zoom-out-btn').onclick = () => this.zoomCamera(1.25);
           
-             // Start Game
-             this.startNewGame(1);
-         }
-      
-         onModelLoad(gltf) {
-             this.model = gltf.scene;
-             this.model.scale.set(0.4, 0.4, 0.4); // Slightly smaller for tiles
-             this.scene.add(this.model);
-
-
-
-
-             this.model.traverse(node => {
-                 if (node.isMesh) node.castShadow = true;
-             });
-
-
-
-
-             this.mixer = new THREE.AnimationMixer(this.model);
-
-
-
-
-             gltf.animations.forEach(clip => {
-                 const action = this.mixer.clipAction(clip);
-                 this.animationsMap.set(clip.name, action);
-             });
-
-
-
-
-             this.mixer.addEventListener('finished', (e) => {
-                 this.oneShotActive = false;
-                 this.currentState = 'idle';
-             });
-
-
-
-
-             this.fadeToAction('Idle', 0);
-             this.currentState = 'idle';
-
-
-
-
+             // Start Game (logic only, models loaded in initGame)
+             this.startNewGame(1, false); // Don't init players yet
              this.loaderEl.style.display = 'none';
              this.modalEl.style.display = 'flex';
          }
@@ -746,12 +1105,89 @@
              this.inputMode = mode;
              this.modalEl.style.display = 'none';
 
-
-
-
              if (mode === 'keyboard') {
+                 // Show game mode select
+                 this.gameModeModalEl.style.display = 'flex';
+             } else {
+                 // Touch is single player only
+                 this.setupGameMode('single');
+             }
+         }
+
+         setupGameMode(mode) {
+             this.gameMode = mode;
+             this.gameModeModalEl.style.display = 'none';
+             this.playerSetupModalEl.style.display = 'flex';
+
+             if (mode === 'single') {
+                 document.getElementById('player-setup-title').textContent = 'Player Setup';
+                 document.getElementById('p2-column').style.display = 'none';
+                 document.getElementById('player-setup-back-btn').style.display = 'block';
+                 if (this.inputMode === 'touch') {
+                    // Back button goes to input select
+                    document.getElementById('player-setup-back-btn').onclick = () => {
+                        this.playerSetupModalEl.style.display = 'none';
+                        this.modalEl.style.display = 'flex';
+                    };
+                 }
+             } else {
+                 document.getElementById('player-setup-title').textContent = '2-Player Setup';
+                 document.getElementById('p2-column').style.display = 'flex';
+                 // Back button goes to game mode select
+                 document.getElementById('player-setup-back-btn').onclick = () => {
+                     this.playerSetupModalEl.style.display = 'none';
+                     this.gameModeModalEl.style.display = 'flex';
+                 };
+             }
+         }
+
+         async initGame() {
+            this.playerSetupModalEl.style.display = 'none';
+            this.loaderEl.style.display = 'flex';
+            this.loaderSubtextEl.textContent = 'Loading 3D Models...';
+            
+            // Get Player 1 Config
+            const p1Name = document.getElementById('p1-name').value || 'Player 1';
+            const p1Color = document.getElementById('p1-color').value;
+            this.player1 = new Player(1, p1Name, p1Color, PLAYER_CONTROLS[1], this);
+            
+            const loadPromises = [this.player1.loadModel(this.gltfLoader)];
+
+            if (this.gameMode === 'multi') {
+                const p2Name = document.getElementById('p2-name').value || 'Player 2';
+                const p2Color = document.getElementById('p2-color').value;
+                this.player2 = new Player(2, p2Name, p2Color, PLAYER_CONTROLS[2], this);
+                loadPromises.push(this.player2.loadModel(this.gltfLoader));
+                
+                // --- FIX: MOVED POSITIONING CODE ---
+                // this.player1.model.position.x = -1; // ERROR: model is null
+                // this.player1.targetYaw = Math.PI / 2; // Face right
+                // this.player2.model.position.x = 1;
+                // this.player2.targetYaw = -Math.PI / 2; // Face left
+            }
+            
+            try {
+                await Promise.all(loadPromises);
+            } catch (error) {
+                console.error("Failed to load models:", error);
+                this.loaderSubtextEl.textContent = 'Error loading models. Please refresh.';
+                return;
+            }
+
+            // --- FIX: MOVED POSITIONING CODE HERE ---
+            // Position players apart *after* models are loaded
+            if (this.gameMode === 'multi') {
+                this.player1.model.position.x = -1;
+                this.player1.targetYaw = Math.PI / 2; // Face right
+                this.player1.currentYaw = this.player1.targetYaw; // Snap to new yaw
+                this.player2.model.position.x = 1;
+                this.player2.targetYaw = -Math.PI / 2; // Face left
+                this.player2.currentYaw = this.player2.targetYaw; // Snap to new yaw
+            }
+
+            // Setup controls
+             if (this.inputMode === 'keyboard') {
                  this.initKeyboardControls();
-                 // MODIFICATION: Only show pointer lock info if not in topDown mode
                  if (this.cameraStyle !== 'topDown') {
                      this.mouseLockInfoEl.style.display = 'block';
                  }
@@ -759,167 +1195,104 @@
                  this.initTouchControls();
              }
              
-             // NEW: Show zoom controls if default camera is topDown (or follow)
-             // MODIFICATION: Now shows for topDown OR follow
              if (this.cameraStyle === 'topDown' || this.cameraStyle === 'follow') {
                  document.getElementById('zoom-controls').style.display = 'flex';
              }
           
-             this.animate(); // Start the loop
+            this.loaderEl.style.display = 'none';
+            this.startNewGame(this.level, true); // Re-run to position players
+            this.animate(); // Start the loop
          }
-
-
 
 
          // --- Game Logic ---
       
-         startNewGame(level) {
-             // NEW: Update level input field
-             if (this.levelInput) {
-                 this.levelInput.value = level;
-             }
+         startNewGame(level, positionPlayers = true) {
+             if (this.levelInput) this.levelInput.value = level;
              
              this.gameOver = false;
              this.gameWin = false;
              this.level = level;
-             if (level > 100) this.level = 100; // Cap at 100
+             if (level > 100) this.level = 100;
           
-             // --- NEW: Generate level-specific colors ---
              this.levelColor = this.generateLevelColor(this.level);
-             // Use a different seed for the background/fog color
              this.levelBackgroundColor = this.generateLevelColor(this.level + 1000); 
-
-
-
-
-             // --- NEW: Update scene environment ---
              this.scene.background = new THREE.Color(this.levelBackgroundColor);
              this.scene.fog.color.set(this.levelBackgroundColor);
-          
-             // --- NEW: (Re)generate textures with the new level color ---
              this.tileTextures = this.createTileTextures(this.levelColor);
-
-
-
-
-             // --- NEW: (Re)create scenery ---
              this.createScenery();
 
-
-
-
-             // Level scaling
-             this.gridSize = Math.min(10 + Math.floor(this.level / 2), 40); // 10x10 up to 40x40
-             this.mineCount = Math.min(5 + Math.floor(this.level * 1.5), Math.floor(this.gridSize * this.gridSize * 0.25)); // 5 up to 25% of board
-          
+             this.gridSize = Math.min(10 + Math.floor(this.level / 2), 40);
+             this.mineCount = Math.min(5 + Math.floor(this.level * 1.5), Math.floor(this.gridSize * this.gridSize * 0.25));
              this.halfGridSize = (this.gridSize * TILE_SIZE) / 2.0;
              this.revealedCells = 0;
              this.totalNonMineCells = (this.gridSize * this.gridSize) - this.mineCount;
              this.minesFlagged = 0;
           
-             // Create logic board
              this.board = this.createMinefield(this.gridSize, this.mineCount);
-          
-             // Create visual board
              this.createVisualBoard();
 
-
-
-
-             // Reset model
-             if (this.model) {
-                 this.model.position.set(0, 0, 0);
-                 this.targetYaw = 0;
-                 this.currentYaw = 0;
+             // Reset players
+             if (positionPlayers) {
+                if (this.player1 && this.player1.model) {
+                    this.player1.model.position.set(this.gameMode === 'multi' ? -1 : 0, 0, 0);
+                    this.player1.targetYaw = this.gameMode === 'multi' ? Math.PI / 2 : 0;
+                    this.player1.currentYaw = this.player1.targetYaw;
+                    if (this.player1.highlighterMesh) this.player1.highlighterMesh.visible = false;
+                }
+                if (this.player2 && this.player2.model) {
+                    this.player2.model.position.set(1, 0, 0);
+                    this.player2.targetYaw = -Math.PI / 2;
+                    this.player2.currentYaw = this.player2.targetYaw;
+                    if (this.player2.highlighterMesh) this.player2.highlighterMesh.visible = false;
+                }
              }
           
-             // Reset highlighter
-             if (this.highlighterMesh) this.highlighterMesh.visible = false;
-             this.currentHighlightedTile = { x: -1, y: -1 };
-          
-             // Update UI
              this.updateGameUI();
              this.gameStatusText.textContent = '';
-          
-             // Update camera
              this.updateTopDownCamera();
          }
          
-         // --- NEW: Handler for "Go to Level" button ---
          goToLevel() {
              let level = parseInt(this.levelInput.value, 10);
-             if (isNaN(level) || level < 1) {
-                 level = 1;
-             }
-             if (level > 100) {
-                 level = 100;
-             }
-             this.levelInput.value = level; // Correct the input if it was invalid
-             this.startNewGame(level);
+             if (isNaN(level) || level < 1) level = 1;
+             if (level > 100) level = 100;
+             this.levelInput.value = level;
+             this.startNewGame(level, true);
          }
 
-
-
-
-         // --- NEW: Function to create level scenery ---
          createScenery() {
-             // Clear old scenery
              while (this.sceneryGroup.children.length) {
                  this.sceneryGroup.remove(this.sceneryGroup.children[0]);
              }
-
-
-
-
-             // Create a very large ground plane
-             const groundGeo = new THREE.PlaneGeometry(200, 200); // 200x200 units
-             // Create a very dark version of the level's tile color for the ground
+             const groundGeo = new THREE.PlaneGeometry(200, 200);
              const groundColor = new THREE.Color(this.levelColor).multiplyScalar(0.2);
-             const groundMat = new THREE.MeshPhongMaterial({
-                 color: groundColor,
-                 shininess: 10 // A little shine
-             });
-             
+             const groundMat = new THREE.MeshPhongMaterial({ color: groundColor, shininess: 10 });
              const groundMesh = new THREE.Mesh(groundGeo, groundMat);
-             groundMesh.rotation.x = -Math.PI / 2; // Lay it flat
-             groundMesh.position.y = -TILE_HEIGHT - 0.05; // Position just below the game board
+             groundMesh.rotation.x = -Math.PI / 2;
+             groundMesh.position.y = -TILE_HEIGHT - 0.05;
              groundMesh.receiveShadow = true;
-             
              this.sceneryGroup.add(groundMesh);
          }
 
-
-
-
          createMinefield(size, mines) {
              let board = Array(size).fill(null).map(() => Array(size).fill(null).map(() => ({
-                 isMine: false,
-                 number: 0,
-                 isRevealed: false,
-                 isFlagged: false,
-                 mesh: null,
-                 materials: [], // To store original materials
-                 flagMesh: null // NEW: To store 3D flag object
+                 isMine: false, number: 0, isRevealed: false, isFlagged: false,
+                 mesh: null, materials: [], flagMesh: null
              })));
-
-
-
-
-             // Place mines
              let minesPlaced = 0;
              while (minesPlaced < mines) {
                  const x = Math.floor(Math.random() * size);
                  const y = Math.floor(Math.random() * size);
+                 // Don't place mines in the center starting area
+                 const center = size / 2;
+                 if (Math.abs(x - center) < 2 && Math.abs(y - center) < 2) continue;
+                 
                  if (!board[x][y].isMine) {
                      board[x][y].isMine = true;
                      minesPlaced++;
                  }
              }
-
-
-
-
-             // Calculate numbers
              for (let x = 0; x < size; x++) {
                  for (let y = 0; y < size; y++) {
                      if (board[x][y].isMine) continue;
@@ -927,8 +1300,7 @@
                      for (let dx = -1; dx <= 1; dx++) {
                          for (let dy = -1; dy <= 1; dy++) {
                              if (dx === 0 && dy === 0) continue;
-                             const nx = x + dx;
-                             const ny = y + dy;
+                             const nx = x + dx, ny = y + dy;
                              if (nx >= 0 && nx < size && ny >= 0 && ny < size && board[nx][ny].isMine) {
                                  count++;
                              }
@@ -940,39 +1312,24 @@
              return board;
          }
 
-
-
-
          createVisualBoard() {
-             // Clear old board
-             // This removes all old tiles AND all old 3D flags
              while (this.boardGroup.children.length) {
-                 // Make sure to dispose of old 3D flags properly
                  this.boardGroup.children[0].traverse(child => {
                      if (child.isMesh) {
                          child.geometry.dispose();
-                         // If material is an array, dispose all
-                         if (Array.isArray(child.material)) {
-                             child.material.forEach(mat => mat.dispose());
-                         } else {
-                             child.material.dispose();
-                         }
+                         if (Array.isArray(child.material)) child.material.forEach(mat => mat.dispose());
+                         else child.material.dispose();
                      }
                  });
                  this.boardGroup.remove(this.boardGroup.children[0]);
              }
-          
              const tileGeo = new THREE.BoxGeometry(TILE_SIZE * 0.95, TILE_HEIGHT, TILE_SIZE * 0.95);
-          
-             // --- Create all materials ---
              const matHidden = new THREE.MeshPhongMaterial({ map: this.tileTextures.hidden });
-             // const matFlag = new THREE.MeshPhongMaterial({ map: this.tileTextures.flag }); // REMOVED
              const matMine = new THREE.MeshPhongMaterial({ map: this.tileTextures.mine });
              const matMineRed = new THREE.MeshPhongMaterial({ map: this.tileTextures.mineRed });
              const matRevealedBase = new THREE.MeshPhongMaterial({ map: this.tileTextures[0] }); 
-          
              const numberMaterials = [
-                 matRevealedBase, // 0 is now the dark base color
+                 matRevealedBase,
                  new THREE.MeshPhongMaterial({ map: this.tileTextures[1] }),
                  new THREE.MeshPhongMaterial({ map: this.tileTextures[2] }),
                  new THREE.MeshPhongMaterial({ map: this.tileTextures[3] }),
@@ -982,24 +1339,9 @@
                  new THREE.MeshPhongMaterial({ map: this.tileTextures[7] }),
                  new THREE.MeshPhongMaterial({ map: this.tileTextures[8] }),
              ];
-
-
-
-
              for (let x = 0; x < this.gridSize; x++) {
                  for (let y = 0; y < this.gridSize; y++) {
-                     const materials = [
-                         matHidden, // right
-                         matHidden, // left
-                         matHidden, // top (main)
-                         matHidden, // bottom
-                         matHidden, // front
-                         matHidden  // back
-                     ];
-
-
-
-
+                     const materials = [matHidden, matHidden, matHidden, matHidden, matHidden, matHidden];
                      const tileMesh = new THREE.Mesh(tileGeo, materials);
                      tileMesh.position.set(
                          (x - this.gridSize / 2 + 0.5) * TILE_SIZE,
@@ -1008,15 +1350,9 @@
                      );
                      tileMesh.receiveShadow = true;
                      this.boardGroup.add(tileMesh);
-                  
-                     // Store logic
                      this.board[x][y].mesh = tileMesh;
-                     // Store references to all potential materials for this tile
                      this.board[x][y].materials = {
-                         hidden: matHidden,
-                         // flag: matFlag, // REMOVED
-                         mine: matMine,
-                         mineRed: matMineRed,
+                         hidden: matHidden, mine: matMine, mineRed: matMineRed,
                          number: numberMaterials[this.board[x][y].number],
                          revealedBase: matRevealedBase 
                      };
@@ -1026,177 +1362,63 @@
       
          updateTopDownCamera() {
              const boardWorldSize = this.gridSize * TILE_SIZE;
-             // MODIFIED: Set a dynamic default height with a minimum
              this.defaultTopDownHeight = Math.max(15, boardWorldSize * 1.2);
              this.topDownCamera.position.y = this.defaultTopDownHeight;
-             this.topDownCamera.position.x = 0; // Ensure centered
-             this.topDownCamera.position.z = 0; // Ensure centered
+             this.topDownCamera.position.x = 0;
+             this.topDownCamera.position.z = 0;
              this.topDownCamera.lookAt(0, 0, 0);
              this.topDownCamera.updateProjectionMatrix();
          }
       
-         updateHighlighter() {
-             if (this.gameOver || !this.model || this.gameWin) {
-                 if (this.highlighterMesh) this.highlighterMesh.visible = false;
-                 return;
-             }
-
-
-
-
-             const pos = this.getRobotGridPosition();
-
-
-
-
-             if (pos) {
-                 const tile = this.board[pos.x][pos.y];
-                
-                 if (tile && tile.mesh) {
-                     // Only update position if tile changed
-                     if (pos.x !== this.currentHighlightedTile.x || pos.y !== this.currentHighlightedTile.y) {
-                         this.currentHighlightedTile = pos;
-                         this.highlighterMesh.position.copy(tile.mesh.position);
-                         this.highlighterMesh.position.y = (TILE_HEIGHT / 2) + 0.01; // Position on top of the tile
-                     }
-                     this.highlighterMesh.visible = true;
-                 } else {
-                     this.highlighterMesh.visible = false;
-                     this.currentHighlightedTile = { x: -1, y: -1 };
-                 }
-             } else {
-                 this.highlighterMesh.visible = false;
-                 this.currentHighlightedTile = { x: -1, y: -1 };
-             }
-         }
-
-
-
-
-         getRobotGridPosition() {
-             if (!this.model) return null;
-          
-             const x = Math.floor(this.model.position.x / TILE_SIZE + this.gridSize / 2);
-             const y = Math.floor(this.model.position.z / TILE_SIZE + this.gridSize / 2);
-
-
-
-
-             if (x < 0 || x >= this.gridSize || y < 0 || y >= this.gridSize) {
-                 return null;
-             }
-             return { x, y };
-         }
-      
-         revealTile() {
-             if (this.gameOver || this.gameWin) return;
-             const pos = this.getRobotGridPosition();
-             if (!pos) return;
-
-
-
-
-             const tile = this.board[pos.x][pos.y];
-             if (tile.isRevealed || tile.isFlagged) return;
-          
-             // Trigger punch animation for feedback
-             this.currentState = 'punch';
-          
-             this.recursiveReveal(pos.x, pos.y);
-          
-             if (tile.isMine) {
-                 // Game Over
-                 this.gameOver = true;
-                 this.revealAllMines(pos.x, pos.y);
-                 this.gameStatusText.textContent = 'GAME OVER!';
-                 this.gameStatusText.style.color = '#ff4444';
-                 this.newGameBtn.textContent = 'Play Again?';
-             } else {
-                 this.checkWinCondition();
-             }
-             this.updateGameUI();
-         }
-
-
-
-
-         recursiveReveal(x, y) {
+         // player = player who triggered the reveal
+         recursiveReveal(x, y, player) {
              if (x < 0 || x >= this.gridSize || y < 0 || y >= this.gridSize) return;
              const tile = this.board[x][y];
              if (tile.isRevealed || tile.isFlagged) return;
 
+             if (tile.isMine) {
+                 this.gameOver = true;
+                 this.revealAllMines(x, y);
+                 this.gameStatusText.textContent = `${player.name} HIT A MINE! GAME OVER!`;
+                 this.gameStatusText.style.color = '#ff4444';
+                 this.newGameBtn.textContent = 'Play Again?';
+             } else {
+                 tile.isRevealed = true;
+                 this.revealedCells++;
+                 this.updateTileVisual(x, y);
 
-
-
-             tile.isRevealed = true;
-             this.revealedCells++;
-             this.updateTileVisual(x, y);
-
-
-
-
-             if (tile.number === 0 && !tile.isMine) {
-                 // Flood fill
-                 for (let dx = -1; dx <= 1; dx++) {
-                     for (let dy = -1; dy <= 1; dy++) {
-                         if (dx === 0 && dy === 0) continue;
-                         this.recursiveReveal(x + dx, y + dy);
+                 if (tile.number === 0) {
+                     for (let dx = -1; dx <= 1; dx++) {
+                         for (let dy = -1; dy <= 1; dy++) {
+                             if (dx === 0 && dy === 0) continue;
+                             this.recursiveReveal(x + dx, y + dy, player); // Recurse
+                         }
                      }
                  }
+                 this.checkWinCondition();
              }
-         }
-      
-         flagTile() {
-             if (this.gameOver || this.gameWin || this.oneShotActive) return;
-             const pos = this.getRobotGridPosition();
-             if (!pos) return;
-
-
-
-
-             const tile = this.board[pos.x][pos.y];
-             if (tile.isRevealed) return;
-          
-             // Trigger crouch animation for feedback
-             this.currentState = 'sitting'; // Use sitting for flagging
-             setTimeout(() => { if (this.currentState === 'sitting') this.currentState = 'idle'; }, 300);
-
-
-
-
-             tile.isFlagged = !tile.isFlagged;
-             
-             // MODIFIED: 3D Flag logic is now handled by updateTileVisual
-             this.updateTileVisual(pos.x, pos.y); 
              this.updateGameUI();
          }
-
-
-
-
+      
          checkWinCondition() {
              if (this.revealedCells === this.totalNonMineCells) {
                  this.gameWin = true;
-                 this.gameOver = true; // Stop input
+                 this.gameOver = true;
                  this.gameStatusText.textContent = `LEVEL ${this.level} CLEARED!`;
                  this.gameStatusText.style.color = '#44ff44';
-                 this.revealAllMines(null, null, true); // Flag all mines
+                 this.revealAllMines(null, null, true);
                  this.newGameBtn.textContent = `Next Level (${this.level + 1})`;
-                 // Automatically start next level?
                  setTimeout(() => {
                      if (this.level < 100) {
-                         this.startNewGame(this.level + 1);
+                         this.startNewGame(this.level + 1, true);
                      } else {
                          this.gameStatusText.textContent = 'ALL LEVELS CLEARED!';
                          this.newGameBtn.textContent = 'Play Again?';
-                         this.level = 0; // Will reset to 1 on next click
+                         this.level = 0;
                      }
                  }, 2000);
              }
          }
-
-
-
 
          revealAllMines(hitX, hitY, isWin = false) {
              for (let x = 0; x < this.gridSize; x++) {
@@ -1204,89 +1426,58 @@
                      const tile = this.board[x][y];
                      if (tile.isMine) {
                          tile.isRevealed = true;
-                         if (isWin) {
-                             tile.isFlagged = true;
-                         } else if (x === hitX && y === hitY) {
-                             tile.hit = true; // To color it red
-                         }
+                         if (isWin) tile.isFlagged = true;
+                         else if (x === hitX && y === hitY) tile.hit = true;
                          this.updateTileVisual(x, y);
                      }
                  }
              }
          }
       
-         // --- MODIFIED: This function now handles 3D flag creation/destruction ---
          updateTileVisual(x, y) {
              const tile = this.board[x][y];
              if (!tile || !tile.mesh) return;
-          
-             let topMaterial; // Material for the top face (index 2)
-             let sideMaterial; // Material for the other 5 faces (0, 1, 3, 4, 5)
+             let topMaterial, sideMaterial;
           
              if (tile.isRevealed) {
-                 if (tile.isMine) {
-                     topMaterial = tile.hit ? tile.materials.mineRed : tile.materials.mine;
-                 } else {
-                     topMaterial = tile.materials.number;
-                 }
+                 topMaterial = tile.isMine ? (tile.hit ? tile.materials.mineRed : tile.materials.mine) : tile.materials.number;
                  sideMaterial = tile.materials.revealedBase;
-                 
-                 // If it was flagged, remove the 3D flag
                  if (tile.flagMesh) {
                      this.boardGroup.remove(tile.flagMesh);
                      this.disposeMesh(tile.flagMesh);
                      tile.flagMesh = null;
                  }
-          
              } else if (tile.isFlagged) {
-                 // Set base color
                  topMaterial = tile.materials.revealedBase; 
                  sideMaterial = tile.materials.revealedBase;
-                 
-                 // Check if a flag mesh *doesn't* exist, and create it
                  if (!tile.flagMesh) {
                      tile.flagMesh = this.createFlagObject();
                      tile.flagMesh.position.copy(tile.mesh.position);
-                     tile.flagMesh.position.y += (TILE_HEIGHT / 2) + 0.01; // Place on top
+                     tile.flagMesh.position.y += (TILE_HEIGHT / 2) + 0.01;
                      this.boardGroup.add(tile.flagMesh);
                  }
              } else {
-                 // Not revealed, not flagged = hidden
                  topMaterial = tile.materials.hidden;
                  sideMaterial = tile.materials.hidden;
-                 
-                 // Check if a flag mesh *does* exist, and remove it
                  if (tile.flagMesh) {
                      this.boardGroup.remove(tile.flagMesh);
                      this.disposeMesh(tile.flagMesh);
                      tile.flagMesh = null;
                  }
              }
-          
-             // Get the mesh's array of 6 materials
              const materials = tile.mesh.material;
-             
-             // Assign the new materials to *all* 6 faces.
-             materials[0] = sideMaterial; // right
-             materials[1] = sideMaterial; // left
-             materials[2] = topMaterial;  // top (the main one)
-             materials[3] = sideMaterial; // bottom
-             materials[4] = sideMaterial; // front
-             materials[5] = sideMaterial; // back
-          
-             // Tell Three.js to apply these material changes.
+             materials[0] = sideMaterial; materials[1] = sideMaterial;
+             materials[2] = topMaterial;  materials[3] = sideMaterial;
+             materials[4] = sideMaterial; materials[5] = sideMaterial;
              tile.mesh.material.needsUpdate = true;
          }
 
-
-
-
          updateGameUI() {
              this.levelText.textContent = this.level;
-             this.minesText.textContent = this.mineCount - this.minesFlagged;
+             const flagsPlaced = this.board.flat().filter(t => t.isFlagged).length;
+             this.minesText.textContent = this.mineCount - flagsPlaced;
          }
       
-         // --- MODIFICATION: New camera cycling function ---
          cycleCameraView() {
              const modes = ['topDown', 'follow'];
              let currentIndex = modes.indexOf(this.cameraStyle);
@@ -1294,122 +1485,72 @@
              this.cameraStyle = modes[currentIndex];
              
              const zoomControls = document.getElementById('zoom-controls');
-
-
-             // MODIFICATION: Logic to show/hide zoom and pointer lock
-             { // 'topDown' or 'follow'
-                 zoomControls.style.display = 'flex'; // SHOW zoom
-                 
-                 // Show pointer lock for 'follow' mode, hide for 'topDown'
+             if (this.cameraStyle === 'topDown' || this.cameraStyle === 'follow') {
+                 zoomControls.style.display = 'flex';
                  if (this.cameraStyle === 'follow' && this.inputMode === 'keyboard') {
                      this.mouseLockInfoEl.style.display = 'block';
                  } else {
                      this.mouseLockInfoEl.style.display = 'none';
                  }
-                 
                  if (this.cameraStyle === 'topDown' && document.pointerLockElement === this.container) {
                      document.exitPointerLock();
                  }
              }
+             this.onWindowResize(); // Update camera aspect ratios
          }
          
-         // --- MODIFIED: Zoom function for Top Down AND Follow cameras ---
          zoomCamera(factor) {
              if (this.cameraStyle === 'topDown') {
                  this.topDownCamera.position.y *= factor;
-                 // Clamp zoom between 5 units and 2x the default height
                  this.topDownCamera.position.y = THREE.MathUtils.clamp(
-                     this.topDownCamera.position.y,
-                     5,
-                     this.defaultTopDownHeight * 2
+                     this.topDownCamera.position.y, 5, this.defaultTopDownHeight * 2
                  );
              } else if (this.cameraStyle === 'follow') {
-                 // Zoom the follow camera by scaling its offset vector
-                 this.followCameraOffset.multiplyScalar(factor);
-                 
-                 // Clamp the zoom (distance) between 2 and 15 units
-                 const distance = this.followCameraOffset.length();
-                 if (distance < 2 || distance > 15) {
-                     this.followCameraOffset.normalize().multiplyScalar(THREE.MathUtils.clamp(distance, 2, 15));
-                 }
+                if (this.player1) this.player1.followCameraOffset.multiplyScalar(factor);
+                if (this.player2) this.player2.followCameraOffset.multiplyScalar(factor);
+                // Clamping is handled inside Player class if needed, but this is simpler
              }
          }
          
-         // --- MODIFIED: Helper function to create a 3D flag object ---
          createFlagObject() {
              const flagGroup = new THREE.Group();
-             
-             // Use the reusable geometries and materials
              const pole = new THREE.Mesh(this.flagPoleGeo, this.flagPoleMat);
-             pole.position.y = 0.3; // Half height
+             pole.position.y = 0.3;
              flagGroup.add(pole);
-             
              const cloth = new THREE.Mesh(this.flagClothGeo, this.flagClothMat);
-             cloth.position.set(0.15, 0.5, 0); // Attach to top of pole (adjusted y)
+             cloth.position.set(0.15, 0.5, 0);
              flagGroup.add(cloth);
-             
-             // --- NEW: Add the red circle base ---
              const base = new THREE.Mesh(this.flagBaseGeo, this.flagBaseMat);
-             base.rotation.x = -Math.PI / 2; // Rotate flat
-             base.position.y = 0.01; // Position just slightly above the tile
+             base.rotation.x = -Math.PI / 2;
+             base.position.y = 0.01;
              flagGroup.add(base);
-             
-             flagGroup.rotation.y = Math.PI / 4; // 45-degree angle
+             flagGroup.rotation.y = Math.PI / 4;
              return flagGroup;
          }
          
-         // --- NEW: Helper function to dispose of 3D objects ---
          disposeMesh(mesh) {
              mesh.traverse(child => {
-                 if (child.isMesh) {
-                     child.geometry.dispose();
-                     // Material is shared, so we don't dispose materials here
-                     // to prevent disposing it for all flags.
-                     // We will dispose them once in createVisualBoard
-                 }
+                 if (child.isMesh) child.geometry.dispose();
              });
          }
       
-         // --- *** MODIFIED: This function now accepts a level color *** ---
-         // It generates textures based on the provided dark color.
          createTileTextures(levelColor) {
              const textures = {};
-             const size = 128; // Texture size
-          
-             const colors = [
-                 '#0000ff', '#008200', '#ff0000', '#000084',
-                 '#840000', '#008284', '#840084', '#FFFFFF' // Changed last color to white for visibility
-             ];
-
-
-
-
-             // Helper function:
-             // Creates a new canvas for each texture
+             const size = 128;
+             const colors = ['#0000ff', '#008200', '#ff0000', '#000084', '#840000', '#008284', '#840084', '#FFFFFF'];
              const createTexture = (baseColor, drawFn) => {
-                 const canvas = document.createElement('canvas'); // Create new canvas
-                 const ctx = canvas.getContext('2d'); // Get its context
-                 canvas.width = size;
-                 canvas.height = size;
-              
-                 ctx.fillStyle = baseColor; // Use specified base color
+                 const canvas = document.createElement('canvas');
+                 const ctx = canvas.getContext('2d');
+                 canvas.width = size; canvas.height = size;
+                 ctx.fillStyle = baseColor;
                  ctx.fillRect(0, 0, size, size);
-                 drawFn(ctx, size); // Draw text/emoji/etc. over it
-                 
-                 const texture = new THREE.CanvasTexture(canvas); // Create texture from *this* canvas
+                 drawFn(ctx, size);
+                 const texture = new THREE.CanvasTexture(canvas);
                  texture.colorSpace = THREE.SRGBColorSpace;
                  return texture;
              };
-
-
-
-
-             // 0 (Empty) - "clean dark level color background"
              textures[0] = createTexture(levelColor, () => {});
-          
-             // 1-8
              for(let i = 1; i <= 8; i++) {
-                 // Numbers on the dark level color background
                  textures[i] = createTexture(levelColor, (ctx, size) => {
                      ctx.fillStyle = colors[i - 1];
                      ctx.font = 'bold 80px sans-serif';
@@ -1418,110 +1559,24 @@
                      ctx.fillText(i.toString(), size / 2, size / 2 + 5);
                  });
              }
-          
-             // Hidden (A sensible gray, unchanged)
              textures.hidden = createTexture('#888888', (ctx, size) => {
-                 ctx.strokeStyle = '#999999';
-                 ctx.lineWidth = 10;
+                 ctx.strokeStyle = '#999999'; ctx.lineWidth = 10;
                  ctx.strokeRect(0, 0, size, size);
              });
-
-
-
-
-             // Flag (REMOVED)
-             // textures.flag = createTexture(...)
-
-
-
-
-             // Mine (Using 💣 on light gray, unchanged)
              textures.mine = createTexture('#DDDDDD', (ctx, size) => {
-                 ctx.fillStyle = 'black';
-                 ctx.font = 'bold 80px sans-serif';
-                 ctx.textAlign = 'center';
-                 ctx.textBaseline = 'middle';
+                 ctx.fillStyle = 'black'; ctx.font = 'bold 80px sans-serif';
+                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                  ctx.fillText('💣', size / 2, size / 2 + 5);
              });
-
-
-
-
-             // Mine (Hit) (Using 🤯 on red, unchanged)
              textures.mineRed = createTexture('red', (ctx, size) => {
-                 ctx.fillStyle = 'black';
-                 ctx.font = 'bold 80px sans-serif';
-                 ctx.textAlign = 'center';
-                 ctx.textBaseline = 'middle';
+                 ctx.fillStyle = 'black'; ctx.font = 'bold 80px sans-serif';
+                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                  ctx.fillText('🤯', size / 2, size / 2 + 5);
              });
-
-
-
-
              return textures;
          }
-         // --- *** END OF MODIFICATION *** ---
-
-
-
-
-         // --- Animation ---
-      
-         fadeToAction(name, duration) {
-             const nextAction = this.animationsMap.get(name);
-             if (!nextAction) {
-                 console.warn(`Animation not found: ${name}`);
-                 return;
-             }
-          
-             if (this.activeAction === nextAction) return;
-
-
-
-
-             if (this.activeAction) {
-                 this.activeAction.fadeOut(duration);
-             }
-
-
-
-
-             nextAction
-                 .reset()
-                 .setEffectiveTimeScale(1)
-                 .setEffectiveWeight(1)
-                 .fadeIn(duration)
-                 .play();
-
-
-
-
-             this.activeAction = nextAction;
-         }
-      
-         playOneShotAction(name) {
-             if (this.oneShotActive) return;
-          
-             const action = this.animationsMap.get(name);
-             if (!action) {
-                 console.warn(`One-shot animation not found: ${name}`);
-                 return;
-             }
-          
-             this.oneShotActive = true;
-             action.setLoop(THREE.LoopOnce, 1);
-             this.fadeToAction(name, 0.2);
-         }
-
-
-
 
          // --- Input Handlers (Keyboard & Mouse) ---
-
-
-
-
          initKeyboardControls() {
              document.addEventListener('keydown', this.boundOnKeyDown);
              document.addEventListener('keyup', this.boundOnKeyUp);
@@ -1529,28 +1584,25 @@
              document.addEventListener('pointerlockchange', this.boundOnPointerLockChange);
          }
       
-         // --- MODIFICATION: Added e.preventDefault() for spacebar ---
          onKeyDown(e) {
-             if (e.key === ' ') {
-                 e.preventDefault(); // Stop spacebar from clicking UI buttons
+             if (e.key === ' ') e.preventDefault();
+             const key = e.key.toLowerCase();
+             if (this.player1) this.player1.handleKeyAction(key, true);
+             if (this.player2) this.player2.handleKeyAction(key, true);
+             // Global keys
+             if (!e.repeat) {
+                 if (key === 'v') this.cycleCameraView();
              }
-             this.keysPressed[e.key.toLowerCase()] = true;
-             this.handleKeyAction(e.key.toLowerCase(), true, e.repeat);
          }
       
          onKeyUp(e) {
-             this.keysPressed[e.key.toLowerCase()] = false;
-             this.handleKeyAction(e.key.toLowerCase(), false, false);
+             const key = e.key.toLowerCase();
+             if (this.player1) this.player1.handleKeyAction(key, false);
+             if (this.player2) this.player2.handleKeyAction(key, false);
          }
 
-
-
-
          onContainerClick() {
-             // MODIFICATION: Only request pointer lock if in follow view
-             if (this.cameraStyle === 'follow') {
-                 this.container.requestPointerLock();
-             }
+             if (this.cameraStyle === 'follow') this.container.requestPointerLock();
          }
       
          onPointerLockChange() {
@@ -1559,7 +1611,6 @@
                  this.mouseLockInfoEl.style.display = 'none';
              } else {
                  document.removeEventListener('mousemove', this.boundOnMouseMove, false);
-                 // MODIFICATION: Check camera style before showing info
                  if (this.inputMode === 'keyboard' && this.cameraStyle !== 'topDown') {
                      this.mouseLockInfoEl.style.display = 'block';
                  }
@@ -1568,97 +1619,31 @@
       
          onMouseMove(e) {
              if (!e.movementX && !e.movementY) return;
-             // MODIFICATION: Only allow mouse look if not in topDown view
              if (this.cameraStyle === 'topDown') return;
           
-             this.cameraYaw -= e.movementX * 0.003;
-             this.cameraPitch -= e.movementY * 0.003;
-             this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch, -Math.PI / 3, Math.PI / 2.5);
-         }
-
-
-
-
-         handleKeyAction(key, isDown, isRepeat) {
-             if (isDown && !isRepeat) {
-                 // Game actions
-                 switch (key) {
-                     // MODIFICATION: Changed 'q' to 'v' and cycles views
-                     case 'v':
-                         this.cycleCameraView();
-                         break;
-                     case ' ': // Spacebar
-                         this.revealTile(); // Run the reveal logic
-                         this.currentState = 'jump'; // Override animation to 'jump'
-                         return; // Action complete
-                     case 'e':
-                     // case 'c': case 'v': case 'b': // Old punch keys (removed 'v')
-                     case 'c': case 'b':
-                     case 'g': case 'h': // 'f' removed from here
-                         this.revealTile();
-                         return; // Don't let punch state override
-                     case 'r':
-                     case 'f': // 'f' is for flag now
-                         this.flagTile();
-                         return;
-                 }
-             }
-          
-             if (this.oneShotActive) return;
-
-
-
-
-             if (isDown) {
-                 if (isRepeat) {
-                     switch (key) {
-                         // ' ' (space) is handled above
-                         case 'z':
-                             return;
-                     }
-                 }
-                 // Set state on first press
-                 switch (key) {
-                     /* ' ' (space) is handled above
-                     case ' ':
-                         this.currentState = 'jump';
-                         break;
-                     */
-                     case 'z':
-                         this.currentState = 'sitting';
-                         break;
-                     case 's':
-                         if (!isRepeat) {
-                             this.targetYaw += Math.PI;
-                         }
-                         this.reverseCamera = true;
-                         break;
+             const deltaX = e.movementX * 0.003;
+             const deltaY = e.movementY * 0.003;
+             
+             if (this.gameMode === 'single' || (e.clientX < window.innerWidth / 2)) {
+                 // Mouse affects P1 (or P1 in single player)
+                 if (this.player1) {
+                    this.player1.cameraYaw -= deltaX;
+                    this.player1.cameraPitch -= deltaY;
+                    this.player1.cameraPitch = THREE.MathUtils.clamp(this.player1.cameraPitch, -Math.PI / 3, Math.PI / 2.5);
                  }
              } else {
-                  if (key === 'z') {
-                     this.currentState = 'idle'; // Stop crouching on key up
-                  }
-                  if (key === 's') {
-                     this.reverseCamera = false; // Reset camera on key up
-                  }
+                 // Mouse affects P2
+                 if (this.player2) {
+                    this.player2.cameraYaw -= deltaX;
+                    this.player2.cameraPitch -= deltaY;
+                    this.player2.cameraPitch = THREE.MathUtils.clamp(this.player2.cameraPitch, -Math.PI / 3, Math.PI / 2.5);
+                 }
              }
          }
 
-
-
-
-         // --- Input Handlers (Touch) ---
-
-
-
-
+         // --- Input Handlers (Touch - P1 Only) ---
          initTouchControls() {
              this.touchControlsEl.style.display = 'block';
-
-
-
-
-             // Joystick
              const joystickArea = document.getElementById('joystick-area');
              this.joystick = {
                  area: joystickArea,
@@ -1670,60 +1655,27 @@
                  x: this.joystick.rect.left + this.joystick.radius,
                  y: this.joystick.rect.top + this.joystick.radius
              };
-          
              joystickArea.addEventListener('touchstart', this.boundOnJoystickMove, { passive: false });
              joystickArea.addEventListener('touchmove', this.boundOnJoystickMove, { passive: false });
              joystickArea.addEventListener('touchend', this.boundOnJoystickEnd, false);
              joystickArea.addEventListener('touchcancel', this.boundOnJoystickEnd, false);
-
-
-
-
-             // Action Buttons
              document.getElementById('jump-btn').addEventListener('touchstart', this.boundOnJumpStart, { passive: false });
              document.getElementById('reveal-btn').addEventListener('touchstart', this.boundOnRevealStart, { passive: false });
              document.getElementById('flag-btn').addEventListener('touchstart', this.boundOnFlagStart, { passive: false });
-          
-             // Crouch button
              const crouchBtn = document.getElementById('crouch-btn');
              crouchBtn.addEventListener('touchstart', this.boundOnCrouchStart, { passive: false });
              crouchBtn.addEventListener('touchend', this.boundOnCrouchEnd, false);
              crouchBtn.addEventListener('touchcancel', this.boundOnCrouchEnd, false);
-
-
-
-
-             // Camera Touch Control
              this.renderer.domElement.addEventListener('touchstart', this.boundOnTouchStart, { passive: false });
              this.renderer.domElement.addEventListener('touchmove', this.boundOnTouchMove, { passive: false });
              this.renderer.domElement.addEventListener('touchend', this.boundOnTouchEnd, false);
              this.renderer.domElement.addEventListener('touchcancel', this.boundOnTouchEnd, false);
          }
-      
-         onCrouchStart(e) {
-             e.preventDefault();
-             this.currentState = 'sitting';
-             document.getElementById('crouch-btn').style.background = 'rgba(255,255,255,0.5)';
-         }
-         onCrouchEnd(e) {
-             e.preventDefault();
-             this.currentState = 'idle';
-             document.getElementById('crouch-btn').style.background = 'rgba(255,255,255,0.2)';
-         }
-         onJumpStart(e) {
-             e.preventDefault();
-             if (this.oneShotActive) return;
-             this.currentState = 'jump';
-         }
-         onRevealStart(e) {
-             e.preventDefault();
-             this.revealTile();
-         }
-         onFlagStart(e) {
-             e.preventDefault();
-             this.flagTile();
-         }
-      
+         onCrouchStart(e) { e.preventDefault(); if (this.player1) this.player1.currentState = 'sitting'; }
+         onCrouchEnd(e) { e.preventDefault(); if (this.player1) this.player1.currentState = 'idle'; }
+         onJumpStart(e) { e.preventDefault(); if (this.player1) { this.player1.revealTile(); this.player1.currentState = 'jump'; } }
+         onRevealStart(e) { e.preventDefault(); if (this.player1) this.player1.revealTile(); }
+         onFlagStart(e) { e.preventDefault(); if (this.player1) this.player1.flagTile(); }
          onJoystickMove(e) {
              e.preventDefault();
              this.touchState.joystick.active = true;
@@ -1732,10 +1684,6 @@
              let y = touch.clientY - this.joystick.center.y;
              const distance = Math.sqrt(x*x + y*y);
              const angle = Math.atan2(y, x);
-
-
-
-
              if (distance > this.joystick.radius) {
                  x = Math.cos(angle) * this.joystick.radius;
                  y = Math.sin(angle) * this.joystick.radius;
@@ -1744,21 +1692,16 @@
              this.touchState.joystick.x = x / this.joystick.radius;
              this.touchState.joystick.y = y / this.joystick.radius;
          }
-      
          onJoystickEnd(e) {
              e.preventDefault();
              this.touchState.joystick.active = false;
-             this.touchState.joystick.x = 0;
-             this.touchState.joystick.y = 0;
+             this.touchState.joystick.x = 0; this.touchState.joystick.y = 0;
              this.joystick.thumb.style.transform = 'translate(-50%, -50%)';
          }
-      
          onTouchStart(e) {
              if (e.target.closest('#touch-controls') || e.target.closest('#game-ui') || e.target.closest('#left-ui-container') || e.target.closest('#zoom-controls')) return;
              e.preventDefault();
-             // MODIFICATION: Only allow touch camera if not in topDown mode
-             if (this.cameraStyle === 'topDown') return;
-          
+             if (this.cameraStyle === 'topDown' || !this.player1) return;
              if (!this.touchState.camera.active) {
                  const touch = e.changedTouches[0];
                  this.touchState.camera.active = true;
@@ -1767,32 +1710,22 @@
                  this.touchState.camera.lastY = touch.clientY;
              }
          }
-      
          onTouchMove(e) {
-             if (!this.touchState.camera.active || this.cameraStyle === 'topDown') return;
+             if (!this.touchState.camera.active || this.cameraStyle === 'topDown' || !this.player1) return;
              e.preventDefault();
              let cameraTouch = null;
              for (let touch of e.changedTouches) {
-                 if (touch.identifier === this.touchState.camera.touchId) {
-                     cameraTouch = touch;
-                     break;
-                 }
+                 if (touch.identifier === this.touchState.camera.touchId) { cameraTouch = touch; break; }
              }
              if (!cameraTouch) return;
-
-
-
-
              const deltaX = cameraTouch.clientX - this.touchState.camera.lastX;
              const deltaY = cameraTouch.clientY - this.touchState.camera.lastY;
              this.touchState.camera.lastX = cameraTouch.clientX;
              this.touchState.camera.lastY = cameraTouch.clientY;
-          
-             this.cameraYaw -= deltaX * 0.01;
-             this.cameraPitch -= deltaY * 0.01;
-             this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch, -Math.PI / 3, Math.PI / 2.5);
+             this.player1.cameraYaw -= deltaX * 0.01;
+             this.player1.cameraPitch -= deltaY * 0.01;
+             this.player1.cameraPitch = THREE.MathUtils.clamp(this.player1.cameraPitch, -Math.PI / 3, Math.PI / 2.5);
          }
-      
          onTouchEnd(e) {
              for (let touch of e.changedTouches) {
                  if (touch.identifier === this.touchState.camera.touchId) {
@@ -1804,223 +1737,96 @@
          }
       
          // --- Update & Render Loop ---
-
-
-
-
-         updateMovementState() {
-             let moveFwd = 0;
-             let rotate = 0;
-             let isRunning = false;
-             let isMoving = false;
-
-
-
-
-             if (this.inputMode === 'keyboard') {
-                 isRunning = this.keysPressed['shift'];
-              
-                 if (this.keysPressed['w']) {
-                     moveFwd = 1;
-                     isMoving = true;
-                 } else if (this.keysPressed['s']) {
-                     moveFwd = 1;
-                     isMoving = true;
-                 }
-              
-                 if (this.keysPressed['a']) {
-                     rotate = 1; // Rotate Left
-                 } else if (this.keysPressed['d']) {
-                     rotate = -1; // Rotate Right
-                 }
-             } else { // Touch controls
-                 // --- NEW JOYSTICK LOGIC ---
-                 const joyX = this.touchState.joystick.x;
-                 const joyY = this.touchState.joystick.y;
-                 const magnitude = Math.sqrt(joyX * joyX + joyY * joyY);
-
-                 if (magnitude > 0.1) { // Deadzone
-                     isMoving = true;
-                     moveFwd = 1; // Always move forward
-                     rotate = 0; // We control yaw directly, not rotation speed
-                     isRunning = magnitude > 0.8; // Run if joystick pushed far
-                    
-                     // Calculate the angle of the joystick
-                     // Math.atan2(y, x)
-                     const angle = Math.atan2(joyY, joyX);
-                    
-                     // Map joystick angle to world rotation (targetYaw)
-                     // Joystick Up (y < 0, x = 0) -> angle -PI/2 -> targetYaw 0 (facing -Z)
-                     // Joystick Right (y = 0, x > 0) -> angle 0 -> targetYaw PI/2 (facing +X)
-                     // Joystick Down (y > 0, x = 0) -> angle PI/2 -> targetYaw PI (facing +Z)
-                     // Joystick Left (y = 0, x < 0) -> angle PI -> targetYaw -PI/2 (facing -X)
-                     // The mapping is: targetYaw = angle + PI/2
-                     this.targetYaw = angle + (Math.PI / 2);
-
-                 } else {
-                     // Joystick is centered
-                     isMoving = false;
-                     moveFwd = 0;
-                     rotate = 0;
-                     isRunning = false;
-                 }
-                 // --- END NEW JOYSTICK LOGIC ---
-             }
-          
-             this.moveDirection.z = moveFwd;
-             this.moveDirection.x = rotate; // This will be 0 for touch, non-zero for keyboard 'a'/'d'
-
-
-
-
-             if (!this.oneShotActive) {
-                 const isMovementState = this.currentState === 'idle' || this.currentState === 'Walking' || this.currentState === 'Running';
-              
-                 if (this.currentState === 'sitting') {
-                     // Stay sitting
-                 } else if (isMovementState) {
-                     if (isMoving || rotate !== 0) {
-                         this.currentState = isRunning ? 'Running' : 'Walking'; // MODIFIED: 'Walking' was 'Running'
-                     } else {
-                         this.currentState = 'idle';
-                     }
-                 }
-             }
+         
+         getActiveCameraForPlayer(playerId) {
+            if (this.cameraStyle === 'topDown') {
+                return this.topDownCamera;
+            }
+            if (playerId === 1) {
+                return this.player1.camera;
+            }
+            if (playerId === 2 && this.player2) {
+                return this.player2.camera;
+            }
+            return this.player1.camera; // Fallback
          }
-      
-         updateCharacter(delta) {
-             if (!this.model || !this.mixer) return;
-          
-             // 1. Determine movement and animation state
-             if (!this.gameOver) {
-                 this.updateMovementState();
-             } else {
-                 // No movement if game over
-                 this.moveDirection.z = 0;
-                 this.moveDirection.x = 0;
-                 if (!this.oneShotActive) this.currentState = 'idle';
-             }
 
-
-
-
-             // 2. Play one-shot actions if needed
-             if (this.currentState === 'jump') {
-                 this.playOneShotAction('Jump');
-             } else if (this.currentState === 'punch') {
-                 this.playOneShotAction('Punch');
-             }
-          
-             // 3. Play looping animations
-             if (!this.oneShotActive) {
-                 if (this.currentState === 'sitting') {
-                     this.fadeToAction('Sitting', 0.2);
-                 } else if (this.currentState === 'Running') {
-                     this.fadeToAction('Running', 0.2);
-                 } else if (this.currentState === 'Walking') {
-                     this.fadeToAction('Walking', 0.2);
-                 } else {
-                     this.fadeToAction('Idle', 0.2);
-                 }
-             }
-          
-             // 4. Update Model Rotation (Yaw)
-             if (this.moveDirection.x !== 0) { // A/D keys
-                 this.targetYaw += (this.moveDirection.x * this.rotationSpeed * delta);
-             }
-          
-             // this.targetYaw = (this.targetYaw + 3*Math.PI) % (2*Math.PI) - Math.PI; // <-- FIX: Removed this line that caused the rotation snap
-          
-             const lerpFactor = 15 * delta;
-             this.currentYaw = THREE.MathUtils.lerp(this.currentYaw, this.targetYaw, lerpFactor);
-             this.model.rotation.y = this.currentYaw;
-
-
-
-
-             // 5. Update Model Position
-             const moveSpeed = (this.currentState === 'Running' ? 4 : (this.currentState === 'Walking' ? 2 : 0));
-          
-             if (moveSpeed > 0 && this.moveDirection.z > 0) {
-                 this.model.getWorldDirection(this.worldForward);
-                 this.finalVelocity.copy(this.worldForward).multiplyScalar(moveSpeed * delta);
-                 this.model.position.add(this.finalVelocity);
-             }
-          
-             // 6. Clamp model position to board
-             this.model.position.x = THREE.MathUtils.clamp(this.model.position.x, -this.halfGridSize, this.halfGridSize);
-             this.model.position.z = THREE.MathUtils.clamp(this.model.position.z, -this.halfGridSize, this.halfGridSize);
-          
-             // --- MODIFICATION: Part 7 - Reworked Camera Logic ---
-             // This logic now only updates the 3D camera (this.camera)
-             // The main animate() loop decides which camera (this.camera or this.topDownCamera) to show.
-             if (this.cameraStyle !== 'topDown') {
-                 const cameraPivot = new THREE.Vector3().copy(this.model.position);
-                 let finalCameraOffset;
-
-
-                 if (this.cameraStyle === 'follow') {
-                     // 3rd Person Follow View
-                     cameraPivot.y += 1.5; // Pivot high for 3rd person
-                     finalCameraOffset = this.followCameraOffset.clone(); // Use the stored offset
-                     if (this.reverseCamera) {
-                         finalCameraOffset.z *= -1;
-                     }
-                 }
-            
-                 const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.cameraYaw);
-                 const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), this.cameraPitch);
-                 const modelYawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.currentYaw);
-                
-                 // Camera rotation is driven by mouse look + model yaw
-                 const finalRotation = new THREE.Quaternion().multiply(modelYawQuat, yawQuat).multiply(pitchQuat);
-
-
-                 finalCameraOffset.applyQuaternion(finalRotation);
-                 this.camera.position.copy(cameraPivot).add(finalCameraOffset);
-                 this.camera.lookAt(cameraPivot);
-             }
-
-
-             // Update highlighter position (always runs)
-             this.updateHighlighter();
-         }
-      
          animate() {
              requestAnimationFrame(this.animate);
              const delta = this.clock.getDelta();
+             const width = window.innerWidth;
+             const height = window.innerHeight;
 
+             // Update players
+             if (this.player1) this.player1.update(delta);
+             if (this.player2) this.player2.update(delta);
+             
+             // Update Mixers
+             if (this.player1 && this.player1.mixer) this.player1.mixer.update(delta);
+             if (this.player2 && this.player2.mixer) this.player2.mixer.update(delta);
 
-
-
-             if (this.mixer) this.mixer.update(delta);
-          
-             this.updateCharacter(delta);
-
-
-
-
-             // --- MODIFICATION: Choose which camera to render ---
-             const activeCamera = (this.cameraStyle === 'topDown') ? this.topDownCamera : this.camera;
-             this.renderer.render(this.scene, activeCamera);
+             // --- Render Logic ---
+             if (this.cameraStyle === 'topDown') {
+                 // Single, shared top-down view
+                 this.renderer.setViewport(0, 0, width, height);
+                 this.renderer.setScissor(0, 0, width, height);
+                 this.renderer.render(this.scene, this.topDownCamera);
+             
+             } else { // 'follow' mode
+                 if (this.gameMode === 'single') {
+                     // Single-player follow view
+                     if (this.player1) {
+                        this.renderer.setViewport(0, 0, width, height);
+                        this.renderer.setScissor(0, 0, width, height);
+                        this.renderer.render(this.scene, this.player1.camera);
+                     }
+                 } else { 
+                     // Multi-player split-screen
+                     const halfWidth = Math.floor(width / 2);
+                     
+                     // P1 (Left)
+                     if (this.player1) {
+                        this.renderer.setViewport(0, 0, halfWidth, height);
+                        this.renderer.setScissor(0, 0, halfWidth, height);
+                        this.renderer.render(this.scene, this.player1.camera);
+                     }
+                     
+                     // P2 (Right)
+                     if (this.player2) {
+                        this.renderer.setViewport(halfWidth, 0, width - halfWidth, height);
+                        this.renderer.setScissor(halfWidth, 0, width - halfWidth, height);
+                        this.renderer.render(this.scene, this.player2.camera);
+                     }
+                 }
+             }
          }
-
-
-
 
          // --- Window Resize ---
          onWindowResize() {
              const width = window.innerWidth;
              const height = window.innerHeight;
           
-             this.camera.aspect = width / height;
-             this.camera.updateProjectionMatrix();
-          
+             this.renderer.setSize(width, height);
+             
+             // Top Down Camera
              this.topDownCamera.aspect = width / height;
              this.topDownCamera.updateProjectionMatrix();
+             
+             // Player Follow Cameras
+             const aspect = (this.gameMode === 'multi' && this.cameraStyle === 'follow')
+                ? (width / 2) / height  // Split-screen aspect
+                : width / height;       // Full-screen aspect
+             
+             if (this.player1) {
+                this.player1.camera.aspect = aspect;
+                this.player1.camera.updateProjectionMatrix();
+             }
+             if (this.player2) {
+                this.player2.camera.aspect = aspect;
+                this.player2.camera.updateProjectionMatrix();
+             }
           
-             this.renderer.setSize(width, height);
-          
+             // Touch Joystick
              if (this.inputMode === 'touch' && this.joystick) {
                  this.joystick.rect = this.joystick.area.getBoundingClientRect();
                  this.joystick.radius = this.joystick.rect.width / 2;
@@ -2035,9 +1841,7 @@
      // --- Start the application ---
      const app = new CharacterController();
 
-
-
-
  </script>
 </body>
 </html>
+

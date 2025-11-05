@@ -647,6 +647,10 @@
                      case bindings.flagAlt:
                          this.flagTile();
                          break;
+                   case bindings.down:
+                       this.targetYaw += Math.PI;
+                       this.reverseCamera = true;
+                       break;
                  }
              }
              
@@ -658,13 +662,7 @@
                  switch (key) {
                      case bindings.crouch:
                          this.currentState = 'sitting';
-                         break;
-                     case bindings.down:
-                         if (!this.keysPressed[key]) { // First press
-                             this.targetYaw += Math.PI;
-                         }
-                         this.reverseCamera = true;
-                         break;
+                         break;       
                  }
              } else { // Key up
                  if (key === bindings.crouch) {
